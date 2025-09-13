@@ -1,0 +1,94 @@
+/* Purple Theme Color Variables - High Contrast */
+:root {
+    /* Override the main CSS variables for proper theme application */
+    /* These MUST be defined AFTER the main CSS loads to take precedence */
+    --primary-50: #faf5ff;
+    --primary-100: #f3e8ff;
+    --primary-200: #e9d5ff;
+    --primary-300: #d8b4fe;
+    --primary-400: #c084fc;
+    --primary-500: #8b5cf6; /* Medium purple replacing default blue */
+    --primary-600: #7c3aed; /* Darker purple for hover states */
+    --primary-700: #6d28d9;
+    --primary-800: #5b21b6; /* Dark purple for H1/H3 */
+    --primary-900: #4c1d95; /* Darkest purple for H2 */
+
+    /* Override neutral colors for better contrast with purple theme */
+    --neutral-50: #faf5ff;   /* Very light purple instead of white */
+    --neutral-100: #f3e8ff;  /* Light purple */
+    --neutral-200: #e9d5ff;  /* Medium light purple */
+    --neutral-300: #d8b4fe;  /* Light purple */
+    --neutral-400: #c084fc;  /* Medium purple */
+    --neutral-500: #8b5cf6;  /* Medium purple */
+    --neutral-600: #7c3aed;  /* Dark purple for text */
+    --neutral-700: #6d28d9;  /* Darker purple for text */
+    --neutral-800: #5b21b6;  /* Dark purple for text */
+    --neutral-900: #4c1d95;  /* Darkest purple for text */
+
+    /* Theme color overrides - Primary purple tones */
+    --theme-primary-color: #8b5cf6; /* Medium purple for primary elements */
+    --theme-primary-hover: #7c3aed; /* Darker purple for hover states */
+    --theme-primary-700: #6d28d9; /* Dark purple for primary-700 */
+    --theme-primary-800: #5b21b6; /* Darkest purple for primary-800 */
+    --theme-primary-900: #4c1d95; /* Darkest purple for primary-900 */
+    --theme-secondary-color: #a78bfa; /* Lighter purple for secondary elements */
+    --theme-success-color: #10b981; /* Green for success states */
+    --theme-error-color: #ef4444; /* Red for error states */
+    --theme-border-color: #d8b4fe; /* Very light purple for borders */
+    --theme-border-radius: 0.375rem;
+    --theme-box-shadow: 0 1px 3px 0 rgba(139, 92, 246, 0.1), 0 1px 2px 0 rgba(139, 92, 246, 0.06);
+    --theme-transition: all 0.2s ease-in-out;
+
+    /* High contrast text colors */
+    --theme-light-text: #ffffff; /* White text for dark backgrounds */
+    --theme-dark-text: #581c87; /* Dark purple text for light backgrounds */
+
+    /* Background color variations for contrast */
+    --theme-light-bg: #faf5ff; /* Very light purple background */
+    --theme-dark-bg: #581c87; /* Dark purple background */
+
+    /* Additional neutral theme variables for full coverage */
+    --theme-neutral-50: #faf5ff;   /* Very light purple */
+    --theme-neutral-100: #f3e8ff;  /* Light purple */
+    --theme-neutral-200: #e9d5ff;  /* Medium light purple */
+    --theme-neutral-300: #d8b4fe;  /* Light purple */
+    --theme-neutral-400: #c084fc;  /* Medium purple */
+    --theme-neutral-500: #8b5cf6;  /* Medium purple */
+    --theme-neutral-600: #7c3aed;  /* Dark purple for text */
+    --theme-neutral-700: #6d28d9;  /* Darker purple for text */
+    --theme-neutral-800: #5b21b6;  /* Dark purple for text */
+    --theme-neutral-900: #4c1d95;  /* Darkest purple for text */
+
+    /* Success and error hover states */
+    --theme-success-hover: #047857; /* Darker green for success hover */
+    --theme-error-hover: #dc2626; /* Darker red for error hover */
+    --theme-warning-color: #f59e0b; /* Warning color */
+    --theme-warning-hover: #d97706; /* Warning hover */
+
+    /* Left panel colors - Purple tone with darkness variations */
+    --theme-left-panel-bg: #8b5cf6; /* Medium purple for main left panel */
+    --theme-left-panel-text: #ffffff; /* White text for good contrast */
+    --theme-left-panel-group-bg: #7c3aed; /* Darker purple for command groups */
+    --theme-left-panel-group-text: #ffffff; /* White text for separation */
+    --theme-left-panel-workflow-bg: #6d28d9; /* Dark purple for workflow buttons */
+    --theme-left-panel-workflow-hover: #5b21b6; /* Even darker purple for workflow hover */
+
+    /* Main content colors */
+    --theme-main-bg: #ffffff; /* White background for main content */
+    --theme-top-panel-bg: #8b5cf6; /* Medium purple for top panel */
+    --theme-top-panel-text: #ffffff; /* White text on purple background */
+    --theme-content-bg: #ffffff; /* White background for content areas */
+
+    /* Chat interface colors - High contrast design */
+    --theme-chat-bg: #faf5ff; /* Very light purple for chat container */
+    --theme-user-message-bg: #7c3aed; /* Dark purple background for user messages */
+    --theme-user-message-text: #ffffff; /* White text on dark purple */
+    --theme-ai-message-bg: #ffffff; /* White background for AI messages */
+    --theme-ai-message-text: #581c87; /* Dark purple text on white background */
+
+    /* Welcome page colors */
+    --theme-welcome-bg: linear-gradient(135deg, #faf5ff 0%, #d8b4fe 100%);
+
+    /* Loading page colors */
+    --theme-loading-bg: linear-gradient(135deg, #581c87 0%, #8b5cf6 100%);
+}

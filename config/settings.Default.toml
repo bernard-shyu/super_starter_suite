@@ -1,0 +1,28 @@
+# Default settings for all users
+
+[USER_PREFERENCES]
+THEME = "light_classic" # Default theme
+USER_RAG_ROOT = "/home/bernard/workspace/prajna_AI/prajna-stadium/llama_index/BERNARD_SPACE/Super-RAG.Default"  # Absolute path to this user's RAG data
+RAG_TYPES = [ "RAG", "CODE_GEN", "FINANCE", "TINA_DOC" ] # Moved from system_config.toml
+
+[GENERATE]
+# User selects the method for parsing documents and creating an index.
+METHOD = "NvidiaAI" # Options: EasyOCR, LlamaParse, NvidiaAI, GeminiAI
+
+[CHATBOT_AI_MODEL]
+# User's personal choice for the main chatbot LLM.
+SELECTED  = { PROVIDER = "nvidia",  ID = "meta/llama-4-maverick-17b-128e-instruct" }
+MODEL_2nd = { PROVIDER = "azureAI", ID = "microsoft/Phi-4" }
+MODEL_3rd = { PROVIDER = "nvidia",  ID = "meta/llama-3.3-70b-instruct" }
+PARAMS = { temperature = 0.7, top_k = 40 }
+
+[WORKFLOW_RAG_TYPE]
+# Determines the data/storage sub-folders relative to the USER_RAG_ROOT above.
+# DATA = "data.{RAG_TYPE}"
+# STORAGE = "storage.{RAG_TYPE}"
+agentic_rag = "RAG"
+code_generator = "CODE_GEN"
+deep_research  = "RAG"
+document_generator = "RAG"
+financial_report = "FINANCE"
+human_in_the_loop = "RAG"

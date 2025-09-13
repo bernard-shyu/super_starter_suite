@@ -1,0 +1,101 @@
+# system_config.toml
+# Contains settings that apply to the entire application for ALL users.
+
+[SYSTEM]
+# RAG_TYPES moved to settings.<USER>.toml
+GENERATE_METHODS = [ "EasyOCR", "LlamaParse", "NvidiaAI", "GeminiAI" ]
+AVAILABLE_THEMES = [
+    "light_classic",  "light_modern",
+    "dark_classic",   "dark_modern",
+    "green_classic",  "green_modern",
+    "blue_classic",   "blue_modern",
+    "purple_classic", "purple_modern"
+]
+
+[LOGGING]
+# Global logging level configuration for the entire application
+# Python logging levels: CRITICAL=50, ERROR=40, WARNING=30, INFO=20, DEBUG=10
+LEVEL = 20  # INFO level (shows messages of sufficient alerting level)
+WEBSOCKET_LOG = true
+GENERATION_LOG = true
+API_LOG = false  # Disable verbose HTTP middleware logs
+CACHE_LOG = false
+
+# Colorful logging configuration
+COLORS_ENABLED = true  # Enable/disable ANSI color codes in logs
+COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
+
+# Component-specific logging levels (overrides global LEVEL for noisy components)
+[LOGGING.COMPONENT_LEVELS]
+# UNIFIED LOGGING SYSTEM - Complete replacement of legacy uvicorn loggers
+"sss.main" = 20              # INFO for main application
+"sss.config" = 20            # INFO for configuration
+"sss.shared" = 20            # INFO for shared utilities
+"sss.gen_index" = 20         # INFO for RAG indexing
+"sss.gen_man" = 20           # INFO for generation management
+"sss.gen_core" = 20          # INFO for core generation
+"sss.gen_utils" = 20         # INFO for index utilities
+"sss.gen_cache" = 20         # INFO for UI caching
+"sss.gen_ws" = 10            # DEBUG for WebSocket (ongoing component)
+"sss.gen_api" = 20           # INFO for REST API
+"sss.gen_term" = 20          # INFO for terminal output
+"sss.gen_prog" = 20          # INFO for progress tracking
+"sss.gen_ocr" = 10           # DEBUG for OCR reader
+"sss.wf_adapt" = 20          # INFO for workflow adapters
+"sss.wf_port" = 20           # INFO for workflow porting
+"sss.test" = 20              # INFO for tests
+
+# EXTERNAL LIBRARY LOGGING CONTROL - Suppress noisy third-party libraries
+"httpx" = 20                 # WARNING level for HTTP client library
+"urllib3" = 20               # WARNING level for URL handling
+"requests" = 20              # WARNING level for HTTP requests
+"PIL" = 20                   # WARNING level for Pillow/PIL image library
+"llama_index" = 20           # WARNING level for LlamaIndex core
+"llama_parse" = 20           # WARNING level for LlamaParse
+"openai" = 20                # WARNING level for OpenAI client
+"asyncio" = 20               # WARNING level for asyncio
+"concurrent" = 20            # WARNING level for concurrent.futures
+
+[CHATBOT_SERVER]
+# Settings for the main, single server instance
+PROTOCOL = "HTTP"
+PORT = 8000
+SSL_CERT_PATH = ""
+SSL_KEY_PATH = ""
+
+[GENERATE_AI_METHOD]
+NvidiaAI_SELECTED_MODEL = "microsoft/phi-4-multimodal-instruct"
+GeminiAI_SELECTED_MODEL = "gemini-2.0-flash"
+
+[MODEL_PARAMETERS]
+AI_PARSER_PARAMS = { }     # { temperature = 0.2, top_p = 0.5 }
+CHATBOT_LLM_PARAMS = { temperature = 0.2, top_p = 0.7 }
+
+[AI_MODELS_AVAILABLE]
+# Full list of AI models the administrator has made available in the system.
+# These are specifically for methods that leverage AI models.
+AI_PARSERS = [
+    { GEN_METHOD = "GeminiAI", ID = "gemini-1.5-flash" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-2.0-flash-lite" },
+
+    { GEN_METHOD = "NvidiaAI", ID = "microsoft/phi-4-multimodal-instruct" },
+    { GEN_METHOD = "NvidiaAI", ID = "google/gemma-3n-e4b-it" },
+]
+
+CHATBOT = [
+    { PROVIDER = "OpenAI",       ID = "gpt-4o" },
+    { PROVIDER = "google_GenAI", ID = "gemini-2.5-flash" },
+    { PROVIDER = "azureAI",      ID = "deepseek/DeepSeek-R1" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-4" },
+    { PROVIDER = "azureAI",      ID = "openai/gpt-5" },
+    { PROVIDER = "azureAI",      ID = "openai/gpt-4.1" },
+    { PROVIDER = "azureAI",      ID = "xai/grok-3" },
+    { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-r1-distill-llama-70b" },
+    { PROVIDER = "OpenRouter",   ID = "openai/gpt-4.1" },
+    { PROVIDER = "OpenRouter",   ID = "x-ai/grok-3" },
+    { PROVIDER = "nvidia",       ID = "meta/llama-3.1-405b-instruct" },
+    { PROVIDER = "nvidia",       ID = "meta/llama-3.1-70b-instruct" },
+    { PROVIDER = "nvidia",       ID = "meta/llama-3.3-70b-instruct" },
+    { PROVIDER = "nvidia",       ID = "openai/gpt-oss-120b" },
+    { PROVIDER = "bernard",      ID = "bern-smart" }
+]

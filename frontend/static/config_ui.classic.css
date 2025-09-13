@@ -1,0 +1,284 @@
+/**
+ * Configuration Management UI Styles
+ *
+ * This file contains the CSS styles for the configuration management UI.
+ * It provides styling for the configuration panels, inputs, and buttons.
+ */
+
+/* Classic Configuration UI Theme Variables - No fallback values to prevent conflicts */
+:root {
+    /* Theme Color Overrides - These will be set by dynamically loaded theme CSS */
+    /* No fallback values defined here to ensure theme CSS takes precedence */
+
+    /* Map to classic style variables using theme variables */
+    --primary-color: var(--theme-primary-color, #3b82f6);
+    --primary-hover: var(--theme-primary-hover, #2563eb);
+    --secondary-color: var(--theme-secondary-color, #6b7280);
+    --success-color: var(--theme-success-color, #10b981);
+    --error-color: var(--theme-error-color, #ef4444);
+    --light-bg: var(--theme-light-bg, #f9fafb);
+    --dark-bg: var(--theme-dark-bg, #1f2937);
+    --light-text: var(--theme-light-text, #f9fafb);
+    --dark-text: var(--theme-dark-text, #1f2937);
+    --border-color: var(--theme-border-color, #e5e7eb);
+    --border-radius: var(--theme-border-radius, 0.375rem);
+    --box-shadow: var(--theme-box-shadow, 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06));
+    --transition: var(--theme-transition, all 0.2s ease-in-out);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    line-height: 1.5;
+    color: var(--dark-text);
+    background-color: var(--light-bg);
+    margin: 0;
+    padding: 0;
+}
+
+/* Dark theme */
+body.dark-theme {
+    background-color: var(--dark-bg);
+    color: var(--light-text);
+}
+
+/* Configuration container */
+#config-container, #settings-container {
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+body.dark-theme #config-container,
+body.dark-theme #settings-container {
+    background-color: #374151;
+}
+
+/* Config section */
+.config-section {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+/* Config item */
+.config-item {
+    margin-bottom: 1rem;
+}
+
+.config-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Config labels */
+.config-item label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--dark-text);
+}
+
+body.dark-theme .config-item label {
+    color: var(--light-text);
+}
+
+/* Config values */
+.config-value {
+    padding: 0.5rem;
+    background-color: var(--light-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+}
+
+body.dark-theme .config-value {
+    background-color: #4b5563;
+    border-color: #6b7280;
+}
+
+/* Config inputs */
+.config-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 1rem;
+    transition: var(--transition);
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-theme .config-input {
+    background-color: #4b5563;
+    border-color: #6b7280;
+    color: var(--light-text);
+}
+
+body.dark-theme .config-input:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+}
+
+/* Select inputs */
+.config-input select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1em;
+    padding-right: 2rem;
+}
+
+/* Buttons */
+button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+button:hover {
+    background-color: var(--primary-hover);
+}
+
+button:disabled {
+    background-color: #9ca3af;
+    cursor: not-allowed;
+}
+
+/* User select */
+#user-select {
+    margin-bottom: 1.5rem;
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    background-color: white;
+}
+
+body.dark-theme #user-select {
+    background-color: #4b5563;
+    border-color: #6b7280;
+    color: var(--light-text);
+}
+
+/* Config table styles */
+.config-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 15px 0;
+}
+
+.config-table-header {
+    display: flex;
+    font-weight: bold;
+    background-color: #f5f5f5;
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-table-row {
+    display: flex;
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-table-row:last-child {
+    border-bottom: none;
+}
+
+.config-table-cell {
+    flex: 1;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.workflow-label {
+    font-weight: 600;
+    color: var(--dark-text);
+}
+
+body.dark-theme .workflow-label {
+    color: var(--light-text);
+}
+
+.rag-type-select {
+    flex: 2;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    #config-container, #settings-container {
+        padding: 1rem;
+    }
+
+    .config-section {
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+    }
+
+    .config-table-header, .config-table-row {
+        flex-direction: column;
+        padding: 8px;
+    }
+
+    .config-table-cell {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .config-table-cell:last-child {
+        margin-bottom: 0;
+    }
+}
+
+/* Save button container for proper bottom spacing */
+.save-button-container {
+    margin: 2rem 0 1.5rem 0;
+    padding: 1rem;
+    text-align: center;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--light-bg);
+}
+
+body.dark-theme .save-button-container {
+    background-color: #374151;
+    border-color: #6b7280;
+}
+
+/* Utility classes */
+.text-success {
+    color: var(--success-color);
+}
+
+.text-error {
+    color: var(--error-color);
+}
+
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-3 { margin-top: 0.75rem; }
+.mt-4 { margin-top: 1rem; }
+
+.mb-1 { margin-bottom: 0.25rem; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mb-3 { margin-bottom: 0.75rem; }
+.mb-4 { margin-bottom: 1rem; }

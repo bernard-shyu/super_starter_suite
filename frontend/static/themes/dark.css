@@ -1,0 +1,97 @@
+/* Dark Theme Color Variables - High Contrast */
+:root {
+    /* Override the main CSS variables for proper theme application */
+    /* These MUST be defined AFTER the main CSS loads to take precedence */
+    --primary-50: #1f2937;
+    --primary-100: #374151;
+    --primary-200: #4b5563;
+    --primary-300: #6b7280;
+    --primary-400: #9ca3af;
+    --primary-500: #60a5fa; /* Light blue replacing default blue */
+    --primary-600: #3b82f6; /* Medium blue for hover states */
+    --primary-700: #2563eb;
+    --primary-800: #1d4ed8; /* Dark blue for H1/H3 */
+    --primary-900: #1e40af; /* Darker blue for H2 */
+
+    /* Override neutral colors for better contrast with dark theme */
+    --neutral-50: #111827;   /* Very dark gray */
+    --neutral-100: #1f2937;  /* Dark gray */
+    --neutral-200: #374151;  /* Medium dark gray */
+    --neutral-300: #4b5563;  /* Medium gray */
+    --neutral-400: #6b7280;  /* Medium light gray */
+    --neutral-500: #9ca3af;  /* Light gray */
+    --neutral-600: #d1d5db;  /* Very light gray for text */
+    --neutral-700: #e5e7eb;  /* Light gray for text */
+    --neutral-800: #f3f4f6;  /* Very light gray for text */
+    --neutral-900: #f9fafb;  /* Almost white for text */
+
+    /* Theme color overrides - Dark theme with blue accents */
+    --theme-primary-color: #60a5fa; /* Light blue for primary elements */
+    --theme-primary-hover: #3b82f6; /* Medium blue for hover states */
+    --theme-primary-700: #2563eb; /* Dark blue for primary-700 */
+    --theme-primary-800: #1d4ed8; /* Darker blue for primary-800 */
+    --theme-primary-900: #1e40af; /* Darkest blue for primary-900 */
+    --theme-secondary-color: #9ca3af; /* Light gray for secondary elements */
+    --theme-success-color: #34d399; /* Light green for success states */
+    --theme-error-color: #f87171; /* Light red for error states */
+    --theme-border-color: #374151; /* Dark gray for borders */
+    --theme-border-radius: 0.375rem;
+    --theme-box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+    --theme-transition: all 0.2s ease-in-out;
+
+    /* High contrast text colors */
+    --theme-light-text: #f9fafb; /* Very light gray text for dark backgrounds */
+    --theme-dark-text: #e5e7eb; /* Light gray text for lighter backgrounds */
+
+    /* Background color variations for contrast */
+    --theme-light-bg: #374151; /* Medium dark gray background */
+    --theme-dark-bg: #111827; /* Very dark gray background */
+
+    /* Additional neutral theme variables for full coverage */
+    --theme-neutral-50: #111827;   /* Very dark gray */
+    --theme-neutral-100: #1f2937;  /* Dark gray */
+    --theme-neutral-200: #374151;  /* Medium dark gray */
+    --theme-neutral-300: #4b5563;  /* Medium gray */
+    --theme-neutral-400: #6b7280;  /* Medium light gray */
+    --theme-neutral-500: #9ca3af;  /* Light gray */
+    --theme-neutral-600: #d1d5db;  /* Very light gray for text */
+    --theme-neutral-700: #e5e7eb;  /* Light gray for text */
+    --theme-neutral-800: #f3f4f6;  /* Very light gray for text */
+    --theme-neutral-900: #f9fafb;  /* Almost white for text */
+
+    /* Success and error hover states */
+    --theme-success-hover: #10b981; /* Darker green for success hover */
+    --theme-error-hover: #ef4444; /* Darker red for error hover */
+    --theme-warning-color: #f59e0b; /* Warning color */
+    --theme-warning-hover: #d97706; /* Warning hover */
+
+    /* Left panel colors - Dark theme with darkness variations */
+    --theme-left-panel-bg: #1f2937; /* Medium dark gray for main left panel */
+    --theme-left-panel-text: #f9fafb; /* Very light text for good contrast */
+    --theme-left-panel-group-bg: #111827; /* Darker gray for command groups */
+    --theme-left-panel-group-text: #f9fafb; /* Very light text for separation */
+    --theme-left-panel-workflow-bg: #0f172a; /* Very dark gray for workflow buttons */
+    --theme-left-panel-workflow-hover: #020617; /* Almost black for workflow hover */
+
+    /* Main content colors */
+    --theme-main-bg: #111827; /* Very dark gray background for main content */
+    --theme-top-panel-bg: #374151; /* Medium dark gray for top panel */
+    --theme-top-panel-text: #f9fafb; /* Very light text on dark background */
+    --theme-content-bg: #1f2937; /* Medium dark background for content areas */
+    --theme-content-text: #e5e7eb; /* Light gray text for content on dark backgrounds */
+    --theme-content-heading: #000000; /* Black text for headings on dark backgrounds */
+    --theme-content-heading-alt: #1f2937; /* Dark gray alternative for headings */
+
+    /* Chat interface colors - High contrast design */
+    --theme-chat-bg: #374151; /* Medium dark gray for chat container */
+    --theme-user-message-bg: #3b82f6; /* Medium blue background for user messages */
+    --theme-user-message-text: #f9fafb; /* Very light text on blue */
+    --theme-ai-message-bg: #1f2937; /* Medium dark background for AI messages */
+    --theme-ai-message-text: #e5e7eb; /* Light gray text on dark background */
+
+    /* Welcome page colors */
+    --theme-welcome-bg: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+
+    /* Loading page colors */
+    --theme-loading-bg: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+}

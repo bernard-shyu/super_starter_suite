@@ -1,0 +1,6 @@
+[USER_PREFERENCES]
+USER_RAG_ROOT = "/test/rag/root"
+THEME = "dark_classic"
+
+[GENERATE]
+METHOD = "TestMethod"

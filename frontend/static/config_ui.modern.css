@@ -1,0 +1,593 @@
+/**
+ * Modern Configuration Management UI Styles
+ *
+ * This file contains modern CSS styles for the configuration management UI.
+ * Features modern design with enhanced heading hierarchy and visual styling.
+ */
+
+/* Modern Color Palette & Design System */
+:root {
+    /* Primary Colors - Use theme variables for consistency */
+    --primary-50: var(--theme-primary-50, #eff6ff);
+    --primary-100: var(--theme-primary-100, #dbeafe);
+    --primary-200: var(--theme-primary-200, #bfdbfe);
+    --primary-300: var(--theme-primary-300, #93c5fd);
+    --primary-400: var(--theme-primary-400, #60a5fa);
+    --primary-500: var(--theme-primary-color, #3b82f6);  /* Main primary - now uses theme variable */
+    --primary-600: var(--theme-primary-hover, #2563eb);  /* Primary hover - now uses theme variable */
+    --primary-700: var(--theme-primary-700, #1d4ed8);
+    --primary-800: var(--theme-primary-800, #1e40af);  /* Now uses theme variable for H1/H3 */
+    --primary-900: var(--theme-primary-900, #1e3a8a);  /* Now uses theme variable for H2 */
+
+    /* Neutral Colors - Use theme variables for consistency */
+    --neutral-50: var(--theme-neutral-50, #ffffff);   /* Increased contrast - now uses theme variable */
+    --neutral-100: var(--theme-neutral-100, #f8fafc);  /* Better contrast - now uses theme variable */
+    --neutral-200: var(--theme-neutral-200, #e2e8f0);  /* Maintained */
+    --neutral-300: var(--theme-neutral-300, #cbd5e1);  /* Maintained */
+    --neutral-400: var(--theme-neutral-400, #94a3b8);  /* Maintained */
+    --neutral-500: var(--theme-neutral-500, #64748b);  /* Maintained */
+    --neutral-600: var(--theme-neutral-600, #475569);  /* Better contrast - now uses theme variable */
+    --neutral-700: var(--theme-neutral-700, #334155);  /* Better contrast - now uses theme variable */
+    --neutral-800: var(--theme-neutral-800, #1e293b);  /* Better contrast - now uses theme variable */
+    --neutral-900: var(--theme-neutral-900, #0f172a);  /* Better contrast - now uses theme variable */
+
+    /* Modern Accent Colors */
+    --success-50: #f0fdf4;
+    --success-500: #22c55e;
+    --success-600: #16a34a;
+    --error-50: #fef2f2;
+    --error-500: #ef4444;
+    --error-600: #dc2626;
+
+    /* Semantic Colors */
+    --success-color: var(--theme-success-color, var(--success-500));
+    --success-hover: var(--theme-success-hover, var(--success-600));
+    --error-color: var(--theme-error-color, var(--error-500));
+    --error-hover: var(--theme-error-hover, var(--error-600));
+    --warning-color: var(--theme-warning-color, #f59e0b);
+    --warning-hover: var(--theme-warning-hover, #d97706);
+
+    /* Background Colors */
+    --bg-primary: var(--theme-main-bg, #ffffff);
+    --bg-secondary: var(--neutral-50);
+    --bg-tertiary: var(--neutral-100);
+    --bg-accent: linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%);
+
+    /* Typography */
+    --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-secondary: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Cascadia Code', monospace;
+
+    /* Spacing */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 0.75rem;
+    --space-lg: 1rem;
+    --space-xl: 1.5rem;
+    --space-2xl: 2rem;
+    --space-3xl: 3rem;
+
+    /* Border Radius */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --shadow-inset: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+    --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.3);
+
+    /* Transitions */
+    --transition-fast: all 0.15s ease-out;
+    --transition-normal: all 0.2s ease-in-out;
+    --transition-slow: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* High Contrast Text Colors for Accessibility */
+    --text-high-contrast: #000000; /* Pure black for maximum contrast */
+    --text-high-contrast-secondary: #1a1a1a; /* Very dark gray for secondary text */
+
+    /* Theme Color Overrides - These will be set by dynamically loaded theme CSS */
+    /* No fallback values defined here to ensure theme CSS takes precedence */
+}
+
+body {
+    font-family: var(--font-primary);
+    line-height: 1.6;
+    color: var(--theme-text-primary);
+    background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-neutral-100) 100%);
+    margin: 0;
+    padding: var(--space-3xl);
+    min-height: 100vh;
+}
+
+/* Modern Typography Scale */
+h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--primary-800);
+    margin: 0 0 var(--space-xl) 0;
+    padding-bottom: var(--space-md);
+    border-bottom: 3px solid var(--primary-200);
+    text-align: center;
+    position: relative;
+}
+
+h1::after {
+    content: '';
+    position: absolute;
+    bottom: -3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary-500) 0%, var(--primary-400) 100%);
+    border-radius: 2px;
+}
+
+h2 {
+    font-size: 1.875rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--primary-900);
+    margin: var(--space-2xl) 0 var(--space-lg) 0;
+    padding: var(--space-md) var(--space-lg);
+    background: linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%); /* Theme-aware background with better contrast */
+    border-left: 6px solid var(--primary-500);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    position: relative;
+    box-shadow: var(--shadow-sm);
+}
+
+h2::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    background: linear-gradient(180deg, var(--primary-500) 0%, var(--primary-400) 100%);
+}
+
+h3 {
+    font-size: 1.25rem;
+    font-weight: 550;
+    line-height: 1.4;
+    color: var(--primary-800);
+    margin: var(--space-lg) 0 var(--space-sm) 0;
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(90deg, var(--primary-200) 0%, var(--primary-300) 100%); /* Theme-aware background with better contrast */
+    border-left: 4px solid var(--primary-400);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    position: relative;
+}
+
+/* Modern Configuration Container */
+#config-container, #settings-container {
+    background: var(--bg-primary);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    padding: var(--space-2xl);
+    margin-bottom: var(--space-2xl);
+    border: 2px solid var(--neutral-300);  /* Increased border width for better visibility */
+    backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Elegant Container Decoration */
+#config-container::before, #settings-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-400) 0%, var(--primary-500) 50%, var(--primary-600) 100%);
+}
+
+/* Modern Section Styling */
+.config-section {
+    margin-bottom: var(--space-2xl);
+    padding: var(--space-xl);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-lg);
+    border: 2px solid var(--neutral-300);  /* Enhanced border visibility */
+    position: relative;
+    transition: var(--transition-normal);
+}
+
+.config-section:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-200);
+}
+
+.config-section:last-child {
+    margin-bottom: 0;
+}
+
+/* Modern Config Items */
+.config-item {
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    background: var(--bg-primary);
+    border-radius: var(--radius-md);
+    border: 2px solid var(--neutral-300);  /* Enhanced border visibility */
+    transition: var(--transition-fast);
+}
+
+.config-item:hover {
+    border-color: var(--primary-300);
+    box-shadow: var(--shadow-sm);
+}
+
+.config-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Enhanced Input Styling - Hybrid Modern-Classic Approach */
+.config-input {
+    width: 100%;
+    padding: var(--space-md) var(--space-lg); /* Keep Modern original padding */
+    border: 2px solid var(--neutral-300); /* Keep Modern original border */
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: var(--font-primary); /* Keep Modern original font */
+    /* BXU: background: var(--bg-primary); */
+    /* BXU: color: var(--neutral-900); * Theme-aware color */
+    transition: var(--transition-fast);
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), var(--shadow-glow);
+    /* BXU: background: var(--bg-primary); */
+}
+
+.config-input:hover {
+    border-color: var(--primary-300);
+}
+
+/* Modern Button Design */
+button {
+    background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    color: white;
+    border: none;
+    padding: var(--space-md) var(--space-xl);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: var(--font-primary);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    box-shadow: var(--shadow-md);
+    position: relative;
+    overflow: hidden;
+}
+
+button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+}
+
+button:hover::before {
+    left: 100%;
+}
+
+button:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
+    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+}
+
+button:disabled {
+    background: var(--neutral-400);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Enhanced Select Styling */
+.config-input select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1.2em;
+    /* BXU: background-color: var(--bg-primary); */
+    /* BXU: color: var(--neutral-900); * Follow Classic approach for select text */
+    padding-right: 3rem;
+}
+
+/* Select Dropdown Styling - Note: Limited browser support */
+.config-input select option {
+    /* BXU: background-color: var(--bg-primary); */
+    /* BXU: color: var(--text-high-contrast); */
+    padding: var(--space-sm) var(--space-md);
+}
+
+/* Alternative: Custom dropdown implementation note */
+/*
+For better control over dropdown appearance, consider using a custom select component.
+The browser's native select dropdown cannot be fully styled with CSS.
+*/
+
+/* Modern Table Design */
+.config-table {
+    width: 100%;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--neutral-200);
+}
+
+.config-table-header {
+    display: flex;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+    color: white;
+    padding: var(--space-md) var(--space-lg);
+}
+
+.config-table-row {
+    display: flex;
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--neutral-200);
+    background: white;
+    transition: var(--transition-fast);
+}
+
+.config-table-row:hover {
+    background: var(--primary-50);
+}
+
+.config-table-row:last-child {
+    border-bottom: none;
+}
+
+.config-table-cell {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    font-size: 0.95rem;
+}
+
+.workflow-label {
+    font-weight: 600;
+    color: var(--text-high-contrast); /* Maximum contrast for table labels */
+}
+
+.rag-type-select {
+    flex: 2;
+}
+
+/* Utility Classes Enhancement */
+.text-success {
+    color: var(--success-500);
+    font-weight: 600;
+}
+
+.text-error {
+    color: var(--error-500);
+    font-weight: 600;
+    background: var(--error-50);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--error-200);
+}
+
+.text-error strong {
+    font-weight: 700;
+}
+
+/* Array Editor Enhancements */
+.array-editor {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--neutral-200);
+    background: var(--bg-tertiary);
+}
+
+.array-item {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--neutral-200);
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    background: var(--bg-primary);
+    transition: var(--transition-fast);
+}
+
+.array-item:hover {
+    background: var(--primary-50);
+}
+
+.array-item:last-child {
+    border-bottom: none;
+}
+
+.array-input {
+    flex: 1;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--neutral-300);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+.array-remove-btn {
+    background: linear-gradient(135deg, var(--error-500) 0%, var(--error-600) 100%);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: var(--transition-fast);
+}
+
+.array-remove-btn:hover {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-md);
+}
+
+.array-add-btn {
+    width: 100%;
+    margin-top: var(--space-md);
+    background: linear-gradient(135deg, var(--success-500) 0%, var(--success-600) 100%);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.array-add-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Save button container for proper bottom spacing */
+.save-button-container {
+    margin: 2rem 0 1.5rem 0;
+    padding: 1rem;
+    text-align: center;
+    border-top: 2px solid var(--neutral-300);
+    background: var(--bg-tertiary);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* Dark Theme Support */
+@media (prefers-color-scheme: dark) {
+    body {
+        background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
+        color: var(--neutral-100);
+    }
+
+    #config-container, #settings-container {
+        background: var(--neutral-900);
+        border-color: var(--neutral-700);
+    }
+
+    h1, h2, h3 {
+        color: var(--neutral-100);
+    }
+
+    .config-section {
+        background: var(--neutral-800);
+        border-color: var(--neutral-700);
+    }
+
+    .config-item {
+        background: var(--neutral-700);
+    }
+
+    .config-input {
+        background: var(--neutral-700);
+        border-color: var(--neutral-600);
+        color: var(--neutral-100);
+    }
+
+    .config-input:focus {
+        border-color: var(--primary-400);
+    }
+
+    .config-table-row {
+        background: var(--neutral-700);
+    }
+
+    .config-table-row:hover {
+        background: var(--neutral-600);
+    }
+
+    .save-button-container {
+        background: var(--neutral-800);
+        border-color: var(--neutral-700);
+    }
+}
+
+/* Responsive Design Enhancement */
+@media (max-width: 768px) {
+    body {
+        padding: var(--space-lg);
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+        padding: var(--space-sm) var(--space-md);
+    }
+
+    #config-container, #settings-container {
+        padding: var(--space-lg);
+    }
+
+    .config-section {
+        margin-bottom: var(--space-lg);
+        padding: var(--space-lg);
+    }
+
+    .config-input {
+        padding: var(--space-sm);
+    }
+
+    .config-table-header, .config-table-row {
+        flex-direction: column;
+        padding: var(--space-sm);
+    }
+
+    .config-table-cell {
+        width: 100%;
+        margin-bottom: var(--space-sm);
+        padding: var(--space-sm) 0;
+    }
+
+    .config-table-cell:last-child {
+        margin-bottom: 0;
+    }
+}
+
+/* Focus and Accessibility */
+button:focus,
+.config-input:focus,
+.array-input:focus {
+    outline: 2px solid var(--primary-400);
+    outline-offset: 2px;
+}
+
+/* Loading States */
+.config-panel[data-loading="true"]::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.config-panel[data-loading="true"]::before {
+    content: 'Loading...';
+    font-size: 1.2rem;
+    color: var(--primary-600);
+    z-index: 11;
+}

@@ -1,0 +1,94 @@
+/* Green Theme Color Variables - High Contrast */
+:root {
+    /* Override the main CSS variables for proper theme application */
+    /* These MUST be defined AFTER the main CSS loads to take precedence */
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-300: #93c5fd;
+    --primary-400: #60a5fa;
+    --primary-500: #10b981; /* Medium green replacing blue */
+    --primary-600: #059669; /* Darker green for hover states */
+    --primary-700: #047857;
+    --primary-800: #065f46; /* This controls H1 color */
+    --primary-900: #064e3b; /* This controls H2 color */
+
+    /* Override neutral colors for better contrast with green theme */
+    --neutral-50: #f0fdf4;   /* Very light green instead of white */
+    --neutral-100: #dcfce7;  /* Light green */
+    --neutral-200: #bbf7d0;  /* Medium light green */
+    --neutral-300: #86efac;  /* Light green */
+    --neutral-400: #4ade80;  /* Medium green */
+    --neutral-500: #22c55e;  /* Medium green */
+    --neutral-600: #16a34a;  /* Dark green for text */
+    --neutral-700: #15803d;  /* Darker green for text */
+    --neutral-800: #166534;  /* Dark green for text */
+    --neutral-900: #14532d;  /* Darkest green for text */
+
+    /* Theme color overrides - Primary green tones */
+    --theme-primary-color: #10b981; /* Medium green for primary elements */
+    --theme-primary-hover: #059669; /* Darker green for hover states */
+    --theme-primary-700: #047857; /* Dark green for primary-700 */
+    --theme-primary-800: #065f46; /* Darkest green for primary-800 */
+    --theme-primary-900: #064e3b; /* Darkest green for primary-900 */
+    --theme-secondary-color: #34d399; /* Lighter green for secondary elements */
+    --theme-success-color: #065f46; /* Darkest green for success states */
+    --theme-error-color: #ef4444; /* Red for error states */
+    --theme-border-color: #bbf7d0; /* Very light green for borders */
+    --theme-border-radius: 0.375rem;
+    --theme-box-shadow: 0 1px 3px 0 rgba(16, 185, 129, 0.1), 0 1px 2px 0 rgba(16, 185, 129, 0.06);
+    --theme-transition: all 0.2s ease-in-out;
+
+    /* High contrast text colors */
+    --theme-light-text: #ffffff; /* White text for dark backgrounds */
+    --theme-dark-text: #065f46; /* Dark green text for light backgrounds */
+
+    /* Background color variations for contrast */
+    --theme-light-bg: #f0fdf4; /* Very light green background */
+    --theme-dark-bg: #064e3b; /* Dark green background */
+
+    /* Additional neutral theme variables for full coverage */
+    --theme-neutral-50: #f0fdf4;   /* Very light green */
+    --theme-neutral-100: #dcfce7;  /* Light green */
+    --theme-neutral-200: #bbf7d0;  /* Medium light green */
+    --theme-neutral-300: #86efac;  /* Light green */
+    --theme-neutral-400: #4ade80;  /* Medium green */
+    --theme-neutral-500: #22c55e;  /* Medium green */
+    --theme-neutral-600: #16a34a;  /* Dark green for text */
+    --theme-neutral-700: #15803d;  /* Darker green for text */
+    --theme-neutral-800: #166534;  /* Dark green for text */
+    --theme-neutral-900: #14532d;  /* Darkest green for text */
+
+    /* Success and error hover states */
+    --theme-success-hover: #047857; /* Darker green for success hover */
+    --theme-error-hover: #dc2626; /* Darker red for error hover */
+    --theme-warning-color: #f59e0b; /* Warning color */
+    --theme-warning-hover: #d97706; /* Warning hover */
+
+    /* Left panel colors - Green tone with darkness variations */
+    --theme-left-panel-bg: #10b981; /* Medium green for main left panel */
+    --theme-left-panel-text: #ffffff; /* White text for good contrast */
+    --theme-left-panel-group-bg: #059669; /* Darker green for command groups */
+    --theme-left-panel-group-text: #ffffff; /* White text for separation */
+    --theme-left-panel-workflow-bg: #047857; /* Dark green for workflow buttons */
+    --theme-left-panel-workflow-hover: #065f46; /* Even darker green for workflow hover */
+
+    /* Main content colors */
+    --theme-main-bg: #ffffff; /* White background for main content */
+    --theme-top-panel-bg: #10b981; /* Medium green for top panel */
+    --theme-top-panel-text: #ffffff; /* White text on green background */
+    --theme-content-bg: #ffffff; /* White background for content areas */
+
+    /* Chat interface colors - High contrast design */
+    --theme-chat-bg: #f0fdf4; /* Very light green for chat container */
+    --theme-user-message-bg: #059669; /* Dark green background for user messages */
+    --theme-user-message-text: #ffffff; /* White text on dark green */
+    --theme-ai-message-bg: #ffffff; /* White background for AI messages */
+    --theme-ai-message-text: #065f46; /* Dark green text on white background */
+
+    /* Welcome page colors */
+    --theme-welcome-bg: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%);
+
+    /* Loading page colors */
+    --theme-loading-bg: linear-gradient(135deg, #064e3b 0%, #10b981 100%);
+}
