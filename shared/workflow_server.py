@@ -12,7 +12,8 @@ from llama_index.core.settings import Settings
 from llama_index.server.api.models import ChatRequest, ChatAPIMessage
 from llama_index.core.workflow import Workflow
 from dataclasses import dataclass
-from super_starter_suite.shared.config_manager import config_manager
+from super_starter_suite.shared.config_manager import config_manager, UserConfig
+from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager
 
 @dataclass
 class WorkflowEvent:
@@ -79,7 +80,8 @@ class WorkflowServer:
         self,
         workflow_name: str,
         request_payload: Dict[str, Any],
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        user_config: Optional[UserConfig] = None
     ) -> WorkflowExecutionResult:
         """
         Execute a workflow with proper event management and framework compliance
@@ -105,11 +107,23 @@ class WorkflowServer:
             # Step 2: Create ChatRequest using established patterns
             chat_request = self._create_chat_request(user_question)
 
-            # Step 3: Initialize workflow using reference patterns
-            workflow = self._initialize_workflow(workflow_name, chat_request)
+            # Step 3: Get chat history memory if session_id is provided
+            chat_memory = None
+            if session_id and user_config:
+                chat_manager = ChatHistoryManager(user_config)
+                session = chat_manager.load_session(workflow_name, session_id)
+                if session:
+                    chat_memory = chat_manager.get_llama_index_memory(session)
+                    if chat_memory:
+                        self.logger.debug(f"Loaded chat memory for session {session_id}")
+                    else:
+                        self.logger.warning(f"Could not create chat memory for session {session_id}")
 
-            # Step 4: Create framework-compliant event
-            start_event = self._create_framework_event(workflow_name, user_question)
+            # Step 4: Initialize workflow using reference patterns
+            workflow = self._initialize_workflow(workflow_name, chat_request, chat_memory)
+
+            # Step 5: Create framework-compliant event
+            start_event = self._create_framework_event(workflow_name, user_question, chat_memory)
 
             # Step 5: Execute workflow with proper event handling
             result = await workflow.run(start_event)
@@ -151,7 +165,7 @@ class WorkflowServer:
             id="chat_request_id"  # Required parameter for framework
         )
 
-    def _initialize_workflow(self, workflow_name: str, chat_request: ChatRequest) -> Workflow:
+    def _initialize_workflow(self, workflow_name: str, chat_request: ChatRequest, chat_memory=None) -> Workflow:
         """
         Initialize workflow using the WorkflowRegistry
         """
@@ -172,7 +186,7 @@ class WorkflowServer:
             timeout=240.0
         )
 
-    def _create_framework_event(self, workflow_name: str, user_question: str):
+    def _create_framework_event(self, workflow_name: str, user_question: str, chat_memory=None):
         """
         Create framework-compliant events using the WorkflowRegistry
         """

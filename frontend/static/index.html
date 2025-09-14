@@ -19,6 +19,7 @@
                 <li><button id="settings-btn" class="menu-button"><img src="/static/icons/settings.png" alt="Settings" class="icon-img"><span> Settings</span></button></li>
                 <li><button id="config-btn" class="menu-button"><img src="/static/icons/config.png" alt="Configuration" class="icon-img"><span> Configuration</span></button></li>
                 <li><button id="generate-btn" class="menu-button"><img src="/static/icons/generate.png" alt="Generate" class="icon-img"><span> Generate</span></button></li>
+                <li><button id="chat-history-btn" class="menu-button"><img src="/static/icons/chat_history.png" alt="Chat History" class="icon-img" onerror="this.src='/static/icons/settings.png'"><span> Chat History</span></button></li>
                 <li class="menu-group-title" data-group="adapted">
                     <div class="group-header">
                         <button id="adapted-group-btn" class="menu-button group-workflow" data-group="adapted"><img src="/static/icons/adapted_group.png" alt="Adapted Group" class="icon-img"><span> Workflow Adapted</span></button>
@@ -169,11 +170,18 @@
                 <div id="config-ui-container" class="config-ui-container" style="display: none;">
                     <!-- Configuration UI will be loaded here by config_ui.js -->
                 </div>
+
+                <!-- Chat History UI Container -->
+                <div id="chat-history-ui-container" class="config-ui-container" style="display: none;">
+                    <!-- Chat History UI will be loaded here -->
+                </div>
             </div>
         </div>
     </div>
 
     <script src="/static/script.js"></script>
     <script src="/static/config_ui.js"></script>
+    <script src="/static/chat_history_manager.js"></script>
+    <script src="/static/chat_ui_enhancements.js"></script>
 </body>
 </html>

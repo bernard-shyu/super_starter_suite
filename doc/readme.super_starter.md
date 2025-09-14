@@ -200,5 +200,15 @@ THEME = "dark_modern"
 
 ### Running the Project
 
-**Start the backend development server**:  `uvicorn main:app --port 8000 --reload --host 0.0.0.0 `
+1. **Start the frontend development server**: `cd super_starter_suite/frontend && npm start ;`
+2. **Start the backend development server**:  `uvicorn super_starter_suite.main:app --port 8000 --reload --host 0.0.0.0 ;`
 
+___________________________________________________________________________________________________________________________________________________________
+# cheat sheet
+___________________________________________________________________________________________________________________________________________________________
+
+```
+bvenv ai8;  cd llama_index/bernard.campus/super_starter_suite;               uvicorn main:app --host 0.0.0.0 --port 8000 
+#---------------------------------------------------------------------------------------------------------------------------
+kvenv ai8;  cd llama_index/bernard.campus/super_starter_suite/rag_indexing;  source gen_ocr_reader.sh
+```

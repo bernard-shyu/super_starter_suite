@@ -83,7 +83,6 @@ def _load_llm(provider: str, model_id: str, param: Optional[Dict[str, Any]] = No
                     api_base="https://integrate.api.nvidia.com/v1",
                     api_key=os.environ.get("NVIDIA_API_KEY"),
                     model=model_id,
-                    is_function_calling_model=False,
                     timeout=float(os.getenv("MY_TIME_OUT") or 150.0),
                     **kwargs)
 

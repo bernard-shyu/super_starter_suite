@@ -265,5 +265,22 @@ async def update_current_theme(request: Request, theme_data: Dict[str, str]):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# --- Chat History API Endpoints ---
+# Import and include chat history router
+try:
+    from super_starter_suite.chat_history import router as chat_history_router
+    main_logger.debug("[STARTUP] Chat history router imported successfully")
+except Exception as e:
+    main_logger.warning(f"[STARTUP] ERROR: Failed to import chat history router: {e}")
+    import traceback
+    traceback.print_exc()
+    chat_history_router = None
+
+if chat_history_router is not None:
+    app.include_router(chat_history_router, prefix="/api", tags=["Chat History"])
+    main_logger.debug("[STARTUP] Chat history router included successfully")
+else:
+    main_logger.warning("[STARTUP] WARNING: Chat history router not available - skipping inclusion")
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

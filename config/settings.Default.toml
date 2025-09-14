@@ -26,3 +26,41 @@ deep_research  = "RAG"
 document_generator = "RAG"
 financial_report = "FINANCE"
 human_in_the_loop = "RAG"
+
+[CHAT_HISTORY]
+# Chat history management and session persistence settings
+
+# Storage Configuration
+ENABLED = true
+STORAGE_PATH = "chat_history"  # Relative to USER_RAG_ROOT
+MAX_SESSIONS = 1000  # Maximum number of chat sessions to store
+MAX_MESSAGES_PER_SESSION = 100  # Maximum messages per session
+
+# Session Management
+AUTO_SAVE = true  # Automatically save chat sessions
+SAVE_INTERVAL = 30  # Seconds between auto-saves
+SESSION_TIMEOUT = 3600  # Seconds before idle session expires (1 hour)
+COMPRESS_OLD_SESSIONS = true  # Compress sessions older than 30 days
+
+# Memory Buffer Settings (for LlamaIndex ChatMemoryBuffer)
+MEMORY_BUFFER_SIZE = 2000  # Maximum tokens to keep in memory
+MEMORY_BUFFER_TOKEN_LIMIT = 2000  # Token limit for memory buffer
+
+# UI Preferences
+SHOW_TIMESTAMPS = true  # Show message timestamps
+SHOW_MESSAGE_STATUS = true  # Show message delivery status
+ENABLE_MESSAGE_ACTIONS = true  # Enable copy/share message actions
+ENABLE_TYPING_INDICATOR = true  # Show typing indicators
+AUTO_SCROLL = true  # Auto-scroll to new messages
+SHOW_CHARACTER_COUNTER = true  # Show input character counter
+
+# Export & Backup
+EXPORT_FORMAT = "json"  # Default export format: json, txt, html
+BACKUP_ENABLED = true  # Enable automatic backups
+BACKUP_INTERVAL = 86400  # Backup interval in seconds (24 hours)
+BACKUP_RETENTION = 30  # Days to keep backups
+
+# Privacy & Security
+ENCRYPT_SESSIONS = false  # Encrypt stored chat sessions
+LOG_CHAT_ACTIVITY = false  # Log chat activity for analytics
+ALLOW_DATA_COLLECTION = false  # Allow anonymous usage data collection

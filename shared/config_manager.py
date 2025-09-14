@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from fastapi import HTTPException, Request
 import logging
 from pathlib import Path
+from super_starter_suite.shared.dto import ChatHistoryConfig
 
 # UNIFIED LOGGING SYSTEM - Use config_manager after it's instantiated
 # We'll use a placeholder logger for now and replace it after config_manager is created
@@ -444,6 +445,7 @@ class UserConfig:
     def __init__(self, user_id: str):
         self.user_id = user_id
         self.my_user_setting = {}  # Maintain user-specific settings here
+        self.chat_history_config = None  # Will be loaded in _load_configs
         self._load_configs()
 
     def _load_configs(self):
@@ -463,6 +465,11 @@ class UserConfig:
             rag_root        = rag_root,
             generate_method = generate_method,
         )
+
+        # Load chat history configuration
+        chat_history_settings = self.get_user_setting("CHAT_HISTORY", {})
+        self.chat_history_config = ChatHistoryConfig.from_dict(chat_history_settings)
+
         # Reduced verbosity - only log on first load or when config changes
         if not hasattr(self, '_config_logged'):
             config_manager.get_logger("config").debug(f"UserConfig::  USER={self.user_id}  WORKFLOW={self.my_workflow}  RAG_TYPE={RAG_TYPE}  METHOD={generate_method}")

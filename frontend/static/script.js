@@ -258,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('chat-interface').style.display = 'none';
         document.getElementById('settings-ui-container').style.display = 'none';
         document.getElementById('config-ui-container').style.display = 'none';
+        document.getElementById('chat-history-ui-container').style.display = 'none';
     }
 
     function showWelcomePage() {
@@ -297,6 +298,38 @@ document.addEventListener('DOMContentLoaded', () => {
         currentView = 'config';
         hideAllViews();
         document.getElementById('config-ui-container').style.display = 'block';
+    }
+
+    function showChatHistoryUI() {
+        currentView = 'chat_history';
+        hideAllViews();
+        document.getElementById('chat-history-ui-container').style.display = 'block';
+
+        // Load chat history UI content if not already loaded
+        const container = document.getElementById('chat-history-ui-container');
+        if (container && container.children.length === 0) {
+            // Load chat history HTML content
+            fetch('/static/chat_history_ui.html')
+                .then(response => response.text())
+                .then(html => {
+                    container.innerHTML = html;
+                    // Initialize chat history manager after loading
+                    if (typeof ChatHistoryManager !== 'undefined') {
+                        window.chatHistoryManager = new ChatHistoryManager();
+                    }
+                    updateStatus('Chat history loaded successfully.', 'success');
+                })
+                .catch(error => {
+                    console.error('Failed to load chat history UI:', error);
+                    container.innerHTML = '<div class="error-message">Failed to load chat history interface</div>';
+                    updateStatus('Failed to load chat history.', 'error');
+                });
+        } else if (container && container.children.length > 0) {
+            // UI already loaded, just refresh if manager exists
+            if (typeof ChatHistoryManager !== 'undefined' && window.chatHistoryManager) {
+                window.chatHistoryManager.refreshSessions();
+            }
+        }
     }
 
     // Chat message handling
@@ -669,6 +702,22 @@ document.getElementById('config-btn').addEventListener('click', async () => {
         // Navigate to the new RAG generation UI page
         window.location.href = '/static/generate_ui.html';
     });
+
+    const chatHistoryBtn = document.getElementById('chat-history-btn');
+    if (chatHistoryBtn) {
+        chatHistoryBtn.addEventListener('click', async () => {
+            console.log('[DEBUG] Chat History button clicked');
+            showLoadingPage('Chat History', 'Loading chat history interface...');
+
+            setTimeout(async () => {
+                showChatHistoryUI();
+                updateStatus('Chat history loaded successfully.', 'success');
+            }, 1000);
+        });
+        console.log('[DEBUG] Chat History button event listener attached');
+    } else {
+        console.error('[DEBUG] Chat History button not found!');
+    }
 
     // Initialize theme system
     async function initializeThemeSystem() {
