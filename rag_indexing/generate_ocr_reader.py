@@ -4,7 +4,6 @@
 #   pip install llama-parse llama-index-llms-azure-inference llama-index-llms-nvidia google-gen
 #   sudo apt-get install tesseract-ocr poppler-utils
 
-import logging
 import os, sys
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -19,10 +18,11 @@ from llama_index.core.llms import ChatMessage, ImageBlock, TextBlock
 
 STORAGE_DIR = "storage"
 
-# Unified logger setup - works for both standalone and library modes
+# Logger setup for internal server component
+# Since this is an internal server component, use MVC logger directly
 try:
-    from super_starter_suite.shared.config_manager import config_manager
-    logger = config_manager.get_logger("gen_ocr")
+    # Import MVC logger for internal server communication
+    from .terminal_output import logger
 
     # Integrated mode: terminal_output.py is accessible, import stdout capture
     try:
@@ -34,7 +34,8 @@ try:
             return func(*args, **kwargs)
 
 except ImportError:
-    # Standalone mode: config_manager not available, use basic logging
+    # Fallback for standalone mode or if terminal_output import fails
+    import logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger("uvicorn")
 
@@ -121,7 +122,7 @@ class EasyOCRReader(BaseReader):
         results = self._reader.readtext(str(file))
         # Concatenate all detected text blocks into a single string
         full_text = "\n".join([res[1] for res in results])
-        logger.info(f"GEN_OCR:PROGRESS: EasyOCRReader process file: {str(file)} - Results: {len(results)} text blocks")
+        logger.info(f"GEN_OCR:PROGRESS: EasyOCRReader process file: ({str(file)}) - Results: {len(results)} text blocks")
 
         return [Document(text=full_text, metadata=extra_info or {})]
 
@@ -156,7 +157,7 @@ class LlamaParseReader(BaseReader):
     def load_data(self, file: Path, extra_info: Optional[Dict[str, Any]] = None) -> List[Document]:
         """Process documents using LlamaParse."""
         documents = self.parser.load_data(str(file))
-        logger.info(f"GEN_OCR:PROGRESS: LlamaParseReader process file: {str(file)} - Documents: {len(documents)}")
+        logger.info(f"GEN_OCR:PROGRESS: LlamaParseReader process file: ({str(file)}) - Documents: {len(documents)}")
         return [
             Document(
                 text=doc.text,
@@ -201,7 +202,7 @@ class ImageProcessorMixin(ABC):
         """Process a single image file."""
         self._ensure_image_imports()
         img = self.Image.open(file)
-        logger.info(f"GEN_OCR:PROGRESS: AI-Parser process file ({file}). Image type: {type(img)}")
+        logger.info(f"GEN_OCR:PROGRESS: AI-Parser process file: ({file}). Image type: {type(img)}")
         ocr_text = self._process_image(img)
         logger.debug(f"Processed image with content length: {len(ocr_text)}")
         return [Document(text=ocr_text, metadata={
@@ -242,7 +243,7 @@ class PDFProcessorMixin(ABC):
         """Process PDF files with mixed content."""
         self._ensure_pdf_imports()
         doc = self.fitz.open(file)
-        logger.info(f"GEN_OCR:PROGRESS: AI-Parser process file ({file}). Document Type: {type(doc)}  Pages: {len(doc)}")
+        logger.info(f"GEN_OCR:PROGRESS: AI-Parser process file: ({file}). Document Type: {type(doc)}  Pages: {len(doc)}")
         results = []
         
         for page_num in range(len(doc)):
@@ -258,9 +259,10 @@ class PDFProcessorMixin(ABC):
                     combined_text = f"Page {page_num + 1}:\n{text}\nOCR Content:\n{ocr_text}"
                 else:
                     combined_text = f"Page {page_num + 1}:\n{text}"
-                logger.debug(f"GEN_OCR:PROGRESS: Processed page {page_num + 1} with content length: {len(combined_text)}")
+                logger.info(f"GEN_OCR:PROGRESS: Processed page {page_num + 1} with IMAGE content, length: {len(combined_text)}")
             else:
                 combined_text = f"Page {page_num + 1}:\n{text}"
+                logger.info(f"GEN_OCR:PROGRESS: Processed page {page_num + 1} with TEXT content, length: {len(combined_text)}")
             
             results.append(Document(text=combined_text, metadata={
                 **(extra_info or {}),
@@ -268,7 +270,7 @@ class PDFProcessorMixin(ABC):
                 "source": str(file)
             }))
 
-        logger.debug(f"GEN_OCR:PROGRESS: AI-Parser finished PDF file process. Pages: {len(doc)} Results: {len(results)}")
+        logger.debug(f"AI-Parser finished PDF file process. Pages: {len(doc)} Results: {len(results)}")
         return results
 
 #-----------------------------------------------------------------------------------------------------------
@@ -296,7 +298,7 @@ class AIVisionOCRReader(BaseReader, PDFProcessorMixin, ImageProcessorMixin):
     
     def load_data(self, file: Path, extra_info: Optional[Dict[str, Any]] = None) -> List[Document]:
         """Common load_data implementation for both PDFs and images."""
-        logger.info(f"GEN_OCR:PROGRESS: Google AIVision process file: {str(file)}")
+        logger.info(f"GEN_OCR:PROGRESS: AI-Parser process file: ({str(file)})")
         if file.suffix.lower() == '.pdf':
             return self._process_pdf_file(file, extra_info)
         else:

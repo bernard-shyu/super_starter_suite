@@ -28,33 +28,35 @@ COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
 # Component-specific logging levels (overrides global LEVEL for noisy components)
 [LOGGING.COMPONENT_LEVELS]
 # UNIFIED LOGGING SYSTEM - Complete replacement of legacy uvicorn loggers
-"sss.main" = 20              # INFO for main application
-"sss.config" = 20            # INFO for configuration
-"sss.shared" = 20            # INFO for shared utilities
-"sss.gen_index" = 20         # INFO for RAG indexing
-"sss.gen_man" = 20           # INFO for generation management
-"sss.gen_core" = 20          # INFO for core generation
-"sss.gen_utils" = 20         # INFO for index utilities
-"sss.gen_cache" = 20         # INFO for UI caching
-"sss.gen_ws" = 10            # DEBUG for WebSocket (ongoing component)
-"sss.gen_api" = 20           # INFO for REST API
-"sss.gen_term" = 20          # INFO for terminal output
-"sss.gen_prog" = 20          # INFO for progress tracking
-"sss.gen_ocr" = 10           # DEBUG for OCR reader
-"sss.wf_adapt" = 20          # INFO for workflow adapters
-"sss.wf_port" = 20           # INFO for workflow porting
-"sss.test" = 20              # INFO for tests
+"sss.main" = 20                 # main application
+"sss.config" = 20               # configuration
+"sss.shared" = 20               # shared utilities
+"sss.gen_index" = 20            # Generate RAG indexing utilities
+"sss.gen_prog" = 20             # Generate progress tracking
+"sss.gen_ocr" = 20              # Generate OCR reader
+"sss.gen_manager" = 20          # Generate Manager MVC-Model
+"sss.gen_event" = 20            # Generate Event System
+"sss.gen_session" = 20          # Generate RAG Session Manager
+"sss.workflow" = 20             # workflow adapters porting
+"sss.history" = 20              # chat history
+"sss.dto" = 20                  # DTO Status Data
+"sss.test" = 20                 # tests
 
 # EXTERNAL LIBRARY LOGGING CONTROL - Suppress noisy third-party libraries
-"httpx" = 20                 # WARNING level for HTTP client library
-"urllib3" = 20               # WARNING level for URL handling
-"requests" = 20              # WARNING level for HTTP requests
-"PIL" = 20                   # WARNING level for Pillow/PIL image library
-"llama_index" = 20           # WARNING level for LlamaIndex core
-"llama_parse" = 20           # WARNING level for LlamaParse
-"openai" = 20                # WARNING level for OpenAI client
-"asyncio" = 20               # WARNING level for asyncio
-"concurrent" = 20            # WARNING level for concurrent.futures
+"httpx" = 20                    # HTTP client library
+"urllib3" = 20                  # URL handling
+"requests" = 20                 # HTTP requests
+"PIL" = 20                      # Pillow/PIL image library
+"llama_index" = 20              # LlamaIndex core
+"llama_parse" = 20              # LlamaParse
+"openai" = 20                   # OpenAI client
+"asyncio" = 20                  # asyncio
+"concurrent" = 20               # concurrent.futures
+
+#  UVICORN HTTP ACCESS LOGGING CONTROL
+"uvicorn" = 20                  # uvicorn logs
+"uvicorn.access" = 30           # Disable uvicorn HTTP access logs
+# "uvicorn.error" = 50          # Uncomment to disable error logs too
 
 [CHATBOT_SERVER]
 # Settings for the main, single server instance

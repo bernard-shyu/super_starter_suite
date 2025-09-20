@@ -21,20 +21,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from super_starter_suite.rag_indexing.generate_ocr_reader import perform_rag_generation
 from super_starter_suite.shared.config_manager import UserConfig
 
-# Import metadata management functions
-from super_starter_suite.shared.index_utils import (
-    scan_data_directory,
-    save_data_metadata
-)
+# Import metadata management functions - DELEGATED to shared/index_utils.py
+# External calls removed to maintain single responsibility principle
 
-# Import MVC Controller for proper MVC architecture
-try:
-    from .generate_websocket import get_mvc_controller
-except ImportError:
-    # Fallback for direct execution
-    from generate_websocket import get_mvc_controller
-
-# Progress tracker removed - using MVC pattern with generate_manager instead
+# MVC Controller removed - all MVC processing through session's GenerateManager
+# No global state dependencies - clean session-based architecture
 
 # Import centralized logging
 from super_starter_suite.shared.config_manager import config_manager
@@ -58,38 +49,39 @@ async def run_generation_with_progress(
     status_callback: Optional[Callable[[str, str], Awaitable[None]]] = None
 ):
     """
-    Run RAG generation with MVC Controller integration.
+    Run RAG generation with callback-based progress tracking.
+
+    MVC processing is handled by the calling session's GenerateManager through callbacks.
+    No global state dependencies - clean session-based architecture.
 
     Args:
         user_config: User configuration
         task_id: Unique task identifier
-        progress_callback: Callback that sends raw log messages to MVC Controller
-        status_callback: Optional callback for broadcasting status updates
+        progress_callback: Callback for processing raw log messages
+        status_callback: Optional callback for status updates
     """
     generation_tasks[task_id] = {"status": "running", "user_id": user_config.user_id, "method": user_config.my_rag.generate_method}
 
-    # Get MVC Controller for proper MVC architecture
-    mvc_controller = get_mvc_controller()
+    # MVC Controller removed - using session-based GenerateManager for MVC processing
+    # Progress tracking handled by session's GenerateManager, not global controller
 
     # Get event loop for thread-safe communication
     loop = asyncio.get_event_loop()
 
-    # Set up real-time log capture with MVC Controller callback
+    # Set up real-time log capture with callback for MVC processing
     log_capture_handler = RealTimeLogCaptureHandler(task_id, progress_callback, loop)
     log_capture_handler.setLevel(logging.DEBUG)  # Capture all levels for real-time streaming
 
-    # Add handler to the main logger to capture generation logs
+    # Add handler to MVC_terminal logger (single source architecture)
+    # Both generate_ocr_reader.py and terminal_output.py now use MVC_terminal
     import logging as builtin_logging
-    builtin_logging.getLogger().addHandler(log_capture_handler)
-
-    # Progress tracking handled by MVC Controller and generate_manager
+    builtin_logging.getLogger("MVC_terminal").addHandler(log_capture_handler)
 
     try:
         gen_logger.info("Starting RAG generation: task_id=%s, user=%s, method=%s, RAG_type=%s",
             task_id, user_config.user_id, user_config.my_rag.generate_method, user_config.my_rag.rag_type)
 
-        # Send initial status message through MVC Controller
-        await mvc_controller.broadcast_terminal_message("info", f"Starting RAG generation with {user_config.my_rag.generate_method}")
+        # MVC messages handled by callback - no global controller dependency
 
         # Set environment variable for progress tracking
         original_debug_value = os.environ.get('RAG_GENERATE_DEBUG')
@@ -114,8 +106,7 @@ async def run_generation_with_progress(
             # Run generation in thread pool to allow concurrent progress monitoring
             await asyncio.get_event_loop().run_in_executor(None, run_generation)
 
-            # Send completion message through MVC Controller
-            await mvc_controller.broadcast_terminal_message("success", "RAG generation completed successfully!")
+            # MVC completion handled by callback - no global controller
 
             # Send task_completed message via WebSocket for proper UI completion handling
             try:
@@ -132,7 +123,9 @@ async def run_generation_with_progress(
 
         except Exception as generation_error:
             error_msg = f"Generation failed: {str(generation_error)}"
-            await mvc_controller.broadcast_terminal_message("error", error_msg)
+            # MVC error handling via callback - no global controller
+            if status_callback:
+                await status_callback("failed", error_msg)
             raise generation_error
 
         finally:
@@ -144,22 +137,12 @@ async def run_generation_with_progress(
 
         # Save metadata after successful generation
         try:
-            current_data = scan_data_directory(user_config.my_rag.data_path)
-            save_data_metadata(
-                user_config.my_rag.rag_root,
-                user_config.my_rag.rag_type,
-                current_data
-            )
-            await mvc_controller.broadcast_terminal_message("info", f"Metadata saved for RAG type '{user_config.my_rag.rag_type}'")
-
-            # Broadcast updated status to frontend
-            from super_starter_suite.shared.index_utils import get_data_status_simple, get_rag_status_summary
-            updated_data_status = get_data_status_simple(user_config)
-            updated_rag_status = get_rag_status_summary(user_config)
-            await mvc_controller.broadcast_status_update(updated_data_status, updated_rag_status)
+            # DELEGATE metadata operations to shared/index_utils.py
+            # External calls removed to maintain single responsibility principle
+            gen_logger.info(f"Metadata operations delegated to shared/index_utils.py for RAG type '{user_config.my_rag.rag_type}'")
 
         except Exception as metadata_error:
-            await mvc_controller.broadcast_terminal_message("warning", f"Failed to save metadata: {metadata_error}")
+            gen_logger.warning(f"Metadata operation failed: {metadata_error}")
 
         generation_tasks[task_id]["status"] = "completed"
         gen_logger.info("Generation task %s completed successfully for user %s.", task_id, user_config.user_id)
@@ -171,9 +154,8 @@ async def run_generation_with_progress(
         raise
 
     finally:
-        # Remove the log capture handler
-        import logging as builtin_logging
-        builtin_logging.getLogger().removeHandler(log_capture_handler)
+        # Remove the log capture handler from MVC_terminal logger
+        builtin_logging.getLogger("MVC_terminal").removeHandler(log_capture_handler)
 
 async def run_generation_script(
     user_config: UserConfig,

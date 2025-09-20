@@ -213,11 +213,145 @@ def test_generation_status(task_id):
         print(f"❌ Error testing generation status: {e}")
         return False
 
+def test_fresh_metadata_creation():
+    """Test Phase 3.1: Fresh metadata file creation with all RAG types"""
+    print("\n🧪 Testing Phase 3.1: Fresh metadata creation with all RAG types")
+    print("=" * 60)
+
+    try:
+        # Test data status endpoint to trigger session creation
+        response = requests.get(f"{BASE_URL}/api/data_status")
+        if response.status_code != 200:
+            print(f"❌ Data status endpoint failed: {response.status_code}")
+            return False
+
+        data = response.json()
+        print(f"✅ Data status endpoint response: {response.status_code}")
+
+        # Check if we have expected RAG types in the response
+        expected_rag_types = ["RAG", "CODE_GEN", "FINANCE", "TINA_DOC"]
+        if 'rag_type' in data:
+            current_rag_type = data['rag_type']
+            print(f"✅ Current RAG type: {current_rag_type}")
+
+            # Test switching to different RAG types to verify lazy loading
+            for rag_type in expected_rag_types:
+                if rag_type != current_rag_type:
+                    switch_response = requests.get(f"{BASE_URL}/api/data_status?rag_type={rag_type}")
+                    if switch_response.status_code != 200:
+                        print(f"❌ Failed to switch to RAG type {rag_type}: {switch_response.status_code}")
+                        return False
+
+                    switch_data = switch_response.json()
+                    if switch_data.get('rag_type') == rag_type:
+                        print(f"✅ Successfully switched to RAG type: {rag_type}")
+                    else:
+                        print(f"❌ RAG type switch failed - expected {rag_type}, got {switch_data.get('rag_type')}")
+                        return False
+
+            return True
+        else:
+            print("❌ RAG type not found in response")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error testing fresh metadata creation: {e}")
+        return False
+
+def test_lazy_loading_cache():
+    """Test Phase 3.1: Lazy loading cache functionality"""
+    print("\n🧪 Testing Phase 3.1: Lazy loading cache functionality")
+    print("=" * 60)
+
+    try:
+        # Test cache status endpoint
+        response = requests.get(f"{BASE_URL}/api/generate/cache/status")
+        if response.status_code != 200:
+            print(f"❌ Cache status endpoint failed: {response.status_code}")
+            return False
+
+        data = response.json()
+        print(f"✅ Cache status endpoint response: {response.status_code}")
+
+        # Check cache information
+        if 'cache_loaded' in data:
+            print(f"✅ Cache loaded status: {data['cache_loaded']}")
+
+        if 'rag_type' in data:
+            print(f"✅ Cache RAG type: {data['rag_type']}")
+
+        if 'total_files' in data:
+            print(f"✅ Cache total files: {data['total_files']}")
+
+        # Test cache operations
+        # Load cache
+        load_response = requests.post(f"{BASE_URL}/api/generate/cache/load")
+        if load_response.status_code == 200:
+            print("✅ Cache load operation successful")
+        else:
+            print(f"❌ Cache load operation failed: {load_response.status_code}")
+            return False
+
+        # Save cache
+        save_response = requests.post(f"{BASE_URL}/api/generate/cache/save")
+        if save_response.status_code == 200:
+            print("✅ Cache save operation successful")
+        else:
+            print(f"❌ Cache save operation failed: {save_response.status_code}")
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Error testing lazy loading cache: {e}")
+        return False
+
+def test_rag_type_switching():
+    """Test Phase 3.1: RAG type switching functionality"""
+    print("\n🧪 Testing Phase 3.1: RAG type switching functionality")
+    print("=" * 60)
+
+    try:
+        # Test session status endpoint to see current state
+        session_response = requests.get(f"{BASE_URL}/api/session/status")
+        if session_response.status_code == 200:
+            session_data = session_response.json()
+            print(f"✅ Session status - initialized: {session_data.get('is_initialized', 'unknown')}")
+
+        # Test multiple RAG type switches
+        rag_types_to_test = ["RAG", "CODE_GEN", "FINANCE", "TINA_DOC"]
+        for rag_type in rag_types_to_test:
+            print(f"📝 Testing RAG type: {rag_type}")
+
+            # Switch to RAG type via data status endpoint
+            response = requests.get(f"{BASE_URL}/api/data_status?rag_type={rag_type}")
+            if response.status_code != 200:
+                print(f"❌ Failed to get data status for {rag_type}: {response.status_code}")
+                return False
+
+            data = response.json()
+            if data.get('rag_type') == rag_type:
+                print(f"✅ RAG type {rag_type} - total_files: {data.get('total_files', 'unknown')}")
+            else:
+                print(f"❌ RAG type mismatch for {rag_type} - got {data.get('rag_type')}")
+                return False
+
+            # Small delay to allow lazy loading
+            time.sleep(0.5)
+
+        print("✅ All RAG type switches successful")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error testing RAG type switching: {e}")
+        return False
+
 def run_all_tests():
     """Run all tests and report results"""
-    print("🚀 Starting Phase 3.6 Verification - Generate UI Fixes Testing")
+    print("🚀 Starting Phase 3.6 Verification - Generate UI Fixes Testing + Phase 3.1 Fresh Metadata Testing")
     print("=" * 70)
 
+    # Original Phase 3.6 tests
     test_results = {
         "generation_method_info": test_generation_method_info(),
         "rag_type_options": test_rag_type_options(),
@@ -243,23 +377,56 @@ def run_all_tests():
         test_results["terminal_logging"] = False
         test_results["generation_status"] = False
 
+    # Phase 3.1 Fresh Metadata Tests
+    test_results["fresh_metadata_creation"] = test_fresh_metadata_creation()
+    test_results["lazy_loading_cache"] = test_lazy_loading_cache()
+    test_results["rag_type_switching"] = test_rag_type_switching()
+
     # Summary
     print("\n" + "=" * 70)
     print("📊 TEST RESULTS SUMMARY")
     print("=" * 70)
 
-    all_passed = True
-    for test_name, result in test_results.items():
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name:<25} {status}")
-        if not result:
-            all_passed = False
+    # Phase 3.6 tests
+    print("📋 Phase 3.6 - Generate UI Fixes:")
+    phase_3_6_tests = ["generation_method_info", "rag_type_options", "generation_validation", "generation_with_rag", "terminal_logging", "generation_status"]
+    phase_3_6_passed = True
+    for test_name in phase_3_6_tests:
+        if test_name in test_results:
+            result = test_results[test_name]
+            status = "✅ PASSED" if result else "❌ FAILED"
+            print(f"   {test_name:<25} {status}")
+            if not result:
+                phase_3_6_passed = False
+
+    # Phase 3.1 tests
+    print("\n📋 Phase 3.1 - Fresh Metadata & Lazy Loading:")
+    phase_3_1_tests = ["fresh_metadata_creation", "lazy_loading_cache", "rag_type_switching"]
+    phase_3_1_passed = True
+    for test_name in phase_3_1_tests:
+        if test_name in test_results:
+            result = test_results[test_name]
+            status = "✅ PASSED" if result else "❌ FAILED"
+            print(f"   {test_name:<25} {status}")
+            if not result:
+                phase_3_1_passed = False
+
+    # Overall result
+    all_passed = phase_3_6_passed and phase_3_1_passed
 
     print("=" * 70)
+    print("📊 OVERALL STATUS:")
+    print(f"   Phase 3.6 (Generate UI Fixes):    {'✅ PASSED' if phase_3_6_passed else '❌ FAILED'}")
+    print(f"   Phase 3.1 (Fresh Metadata):       {'✅ PASSED' if phase_3_1_passed else '❌ FAILED'}")
+
     if all_passed:
-        print("🎉 ALL TESTS PASSED! Generate UI fixes are working correctly.")
+        print("\n🎉 ALL TESTS PASSED! Generate UI fixes and fresh metadata system are working correctly.")
     else:
-        print("⚠️  Some tests failed. Issues may still exist.")
+        print("\n⚠️  Some tests failed. Issues may still exist.")
+        if not phase_3_6_passed:
+            print("   - Phase 3.6 Generate UI fixes need attention")
+        if not phase_3_1_passed:
+            print("   - Phase 3.1 Fresh metadata system needs attention")
 
     return all_passed
 

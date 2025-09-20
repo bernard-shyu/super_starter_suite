@@ -89,51 +89,73 @@ document.addEventListener('DOMContentLoaded', () => {
         await displayCacheStatus();
     }
 
-    // Load data status (check cache first)
-    async function loadDataStatus() {
+    // Load data status (check cache first unless forceFresh=true)
+    async function loadDataStatus(forceFresh = false) {
         const cacheKey = `data_status_${currentRAGType}`;
+        console.log('[DEBUG] loadDataStatus called:', { currentRAGType, cacheKey, forceFresh, hasCache: cacheManager.has(cacheKey) });
 
-        if (cacheManager.has(cacheKey)) {
-            displayDataStatus(cacheManager.get(cacheKey));
+        if (!forceFresh && cacheManager.has(cacheKey)) {
+            console.log('[DEBUG] Using cached data status');
+            const cachedData = cacheManager.get(cacheKey);
+            displayDataStatus(cachedData);
             return;
         }
 
         try {
-            const response = await fetch(`/api/data_status?rag_type=${encodeURIComponent(currentRAGType)}`);
+            const apiUrl = `/api/data_status?rag_type=${encodeURIComponent(currentRAGType)}`;
+            console.log('[DEBUG] Making API call to:', apiUrl);
+            const response = await fetch(apiUrl);
             const data = await response.json();
+            console.log('[DEBUG] API response received:', { ok: response.ok, dataKeys: Object.keys(data) });
 
             if (response.ok) {
                 cacheManager.set(cacheKey, data);
+                console.log('[DEBUG] Calling displayDataStatus with new data');
                 displayDataStatus(data);
+                if (forceFresh) {
+                    logToTerminal('info', '✅ Fresh data status loaded');
+                }
             } else {
                 throw new Error(data.detail || 'Failed to load data status');
             }
         } catch (error) {
+            console.log('[DEBUG] Error in loadDataStatus:', error.message);
             logToTerminal('error', `Failed to load data status: ${error.message}`);
             displayDataStatusError(error.message);
         }
     }
 
-    // Load RAG storage status (check cache first)
-    async function loadRAGStatus() {
+    // Load RAG storage status (check cache first unless forceFresh=true)
+    async function loadRAGStatus(forceFresh = false) {
         const cacheKey = `rag_status_${currentRAGType}`;
+        console.log('[DEBUG] loadRAGStatus called:', { currentRAGType, cacheKey, forceFresh, hasCache: cacheManager.has(cacheKey) });
 
-        if (cacheManager.has(cacheKey)) {
-            displayRAGStatus(cacheManager.get(cacheKey));
+        if (!forceFresh && cacheManager.has(cacheKey)) {
+            console.log('[DEBUG] Using cached RAG status');
+            const cachedData = cacheManager.get(cacheKey);
+            displayRAGStatus(cachedData);
             return;
         }
 
         try {
-            const response = await fetch(`/api/rag_status?rag_type=${encodeURIComponent(currentRAGType)}`);
+            const apiUrl = `/api/rag_status?rag_type=${encodeURIComponent(currentRAGType)}`;
+            console.log('[DEBUG] Making API call to:', apiUrl);
+            const response = await fetch(apiUrl);
             const data = await response.json();
+            console.log('[DEBUG] API response received:', { ok: response.ok, dataKeys: Object.keys(data) });
 
             if (response.ok) {
                 cacheManager.set(cacheKey, data);
+                console.log('[DEBUG] Calling displayRAGStatus with new data');
                 displayRAGStatus(data);
+                if (forceFresh) {
+                    logToTerminal('info', '✅ Fresh RAG status loaded');
+                }
             } else {
                 throw new Error(data.detail || 'Failed to load RAG status');
             }
         } catch (error) {
+            console.log('[DEBUG] Error in loadRAGStatus:', error.message);
             logToTerminal('error', `Failed to load RAG status: ${error.message}`);
             displayRAGStatusError(error.message);
         }
@@ -193,9 +215,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Get selected model for the current method if it's an AI method
                     let selectedModel = 'N/A';
                     if (currentMethod.includes('AI')) {
-                        // Get model from CHATBOT_AI_MODEL.SELECTED section
-                        if (settings.CHATBOT_AI_MODEL && settings.CHATBOT_AI_MODEL.SELECTED) {
-                            selectedModel = settings.CHATBOT_AI_MODEL.SELECTED.ID || 'N/A';
+                        // Get model from the appropriate AI method section
+                        if (currentMethod === 'NvidiaAI' && settings.GENERATE_AI_METHOD && settings.GENERATE_AI_METHOD.NvidiaAI_SELECTED_MODEL) {
+                            selectedModel = settings.GENERATE_AI_METHOD.NvidiaAI_SELECTED_MODEL;
+                        } else if (currentMethod === 'GeminiAI' && settings.GENERATE_AI_METHOD && settings.GENERATE_AI_METHOD.GeminiAI_SELECTED_MODEL) {
+                            selectedModel = settings.GENERATE_AI_METHOD.GeminiAI_SELECTED_MODEL;
+                        } else {
+                            // Fallback to CHATBOT_AI_MODEL for other cases
+                            if (settings.CHATBOT_AI_MODEL && settings.CHATBOT_AI_MODEL.SELECTED) {
+                                selectedModel = settings.CHATBOT_AI_MODEL.SELECTED.ID || 'N/A';
+                            }
                         }
                     }
 
@@ -217,54 +246,188 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ============================================================================
+    // MVC VIEW LAYER: Enhanced Frontend Status Formatting Functions
+    // ============================================================================
+    // All display formatting logic moved from backend to frontend (MVC View layer)
+
+    /**
+     * MVC VIEW: Format data status display based on raw backend data
+     * Backend provides raw data, frontend determines presentation format
+     */
+    function formatDataStatusDisplay(data) {
+        // MVC COMPLIANT: Frontend analyzes raw data to determine status
+        // Backend no longer provides pre-formatted status - frontend decides
+
+        const totalFiles = data.total_files || 0;
+        const storageStatus = data.storage_status || 'empty';
+        const dataNewestTime = data.data_newest_time;
+        const storageCreation = data.storage_creation;
+        const comparisonData = data.comparison_data || {};
+
+        // Analyze raw data to determine status (frontend business logic)
+        let statusType = 'uptodate';
+        let statusText = 'Up to date';
+        let statusColor = '#4CAF50'; // GREEN
+
+        if (totalFiles === 0) {
+            // No data files found
+            statusType = 'no_data';
+            statusText = 'No Data Files';
+            statusColor = '#9E9E9E'; // GRAY
+        } else if (storageStatus === 'empty') {
+            // Data exists but no storage created yet
+            statusType = 'need_generate';
+            statusText = 'Need Generate';
+            statusColor = '#f44336'; // RED
+        } else if (dataNewestTime && storageCreation) {
+            // Compare timestamps (frontend handles comparison logic)
+            try {
+                const dataTime = new Date(dataNewestTime);
+                const storageTime = new Date(storageCreation);
+
+                if (dataTime > storageTime) {
+                    // Data is newer than storage
+                    statusType = 'obsolete_data';
+                    statusText = 'Obsolete Data';
+                    statusColor = '#FF9800'; // ORANGE
+                }
+            } catch (e) {
+                // Timestamp comparison failed
+                statusType = 'unknown';
+                statusText = 'Status Unknown';
+                statusColor = '#9E9E9E'; // GRAY
+            }
+        }
+
+        // Use comparison data if available (more detailed status)
+        if (comparisonData.is_up_to_date === false) {
+            statusType = 'changes_detected';
+            statusText = 'Changes Detected';
+            statusColor = '#FF9800'; // ORANGE
+        }
+
+        return {
+            statusType: statusType,
+            text: statusText,
+            color: statusColor,
+            totalFiles: totalFiles,
+            storageStatus: storageStatus,
+            fromCache: data.from_cache || false
+        };
+    }
+
+    /**
+     * MVC VIEW: Format file size for human-readable display
+     */
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    /**
+     * MVC VIEW: Format date for display
+     */
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        } catch (e) {
+            return dateString;
+        }
+    }
+
+    /**
+     * MVC VIEW: Generate summary text based on raw data
+     */
+    function generateDataSummary(data) {
+        const totalFiles = data.total_files || 0;
+        const totalSize = data.total_size || 0;
+        const storageStatus = data.storage_status || 'empty';
+        const statusInfo = formatDataStatusDisplay(data);
+
+        let summary = '';
+
+        if (totalFiles === 0) {
+            summary = 'No data files found';
+        } else if (storageStatus === 'empty') {
+            summary = `Found ${totalFiles} files (${formatFileSize(totalSize)}) - generation required`;
+        } else {
+            summary = `Data contains ${totalFiles} files (${formatFileSize(totalSize)})`;
+        }
+
+        // Add cache indicator
+        if (data.from_cache) {
+            summary += ' (cached)';
+        }
+
+        return summary;
+    }
+
     // Display data status - switches between Summary and Detail modes
     function displayDataStatus(data) {
+        console.log('[DEBUG] displayDataStatus called with data:', { dataKeys: Object.keys(data), totalFiles: data.total_files, ragType: data.rag_type });
+
         const dataStatusDiv = document.getElementById('data-status');
+        if (!dataStatusDiv) {
+            console.log('[DEBUG] ERROR: data-status element not found!');
+            return;
+        }
+
         dataStatusDiv.innerHTML = '';
 
         if (dataDetailView) {
             // Detail Status mode - show detailed file list with small font
+            console.log('[DEBUG] Using detail view mode');
             displayDetailedDataStatus(data);
         } else {
-            // Summary Status mode - show 4-row tabular layout with normal font (removed rag_storage_hash)
+            // Summary Status mode - show 4-row tabular layout with normal font (reordered fields)
+            console.log('[DEBUG] Using summary view mode');
             const summaryTable = document.createElement('table');
             summaryTable.style.width = '100%';
             summaryTable.style.borderCollapse = 'collapse';
             summaryTable.style.fontSize = '14px'; // Normal font size
 
-            // Row 1: data_file_newest (matches backend field name)
+            // Row 1: Newest File Time (data_newest_time)
             const row1 = summaryTable.insertRow();
-            row1.insertCell(0).textContent = 'Newest File:';
+            row1.insertCell(0).textContent = 'Newest File Time:';
             row1.cells[0].style.fontWeight = 'bold';
             row1.cells[0].style.padding = '4px 8px';
-            const newestCell = row1.insertCell(1);
-            // FIX: Use correct backend field name
-            newestCell.textContent = data.data_file_newest ? formatDate(data.data_file_newest) : 'N/A';
-            newestCell.style.padding = '4px 8px';
-            newestCell.style.textAlign = 'left'; // Left-aligned as requested
+            const fileTimeCell = row1.insertCell(1);
+            fileTimeCell.textContent = formatDate(data.data_newest_time);
+            fileTimeCell.style.padding = '4px 8px';
+            fileTimeCell.style.textAlign = 'left';
 
-            // Row 2: total_files + total_size
+            // Row 2: Newest File Name (data_newest_file)
             const row2 = summaryTable.insertRow();
-            row2.insertCell(0).textContent = 'Files / Size:';
+            row2.insertCell(0).textContent = 'Newest File Name:';
             row2.cells[0].style.fontWeight = 'bold';
             row2.cells[0].style.padding = '4px 8px';
-            const filesSizeCell = row2.insertCell(1);
-            filesSizeCell.textContent = `${data.total_files || 0} files / ${formatFileSize(data.total_size || 0)}`;
-            filesSizeCell.style.padding = '4px 8px';
-            filesSizeCell.style.textAlign = 'left'; // Left-aligned as requested
+            const fileNameCell = row2.insertCell(1);
+            const newestFilename = data.data_newest_file || 'N/A';
+            const filenameValue = newestFilename.length > 35 ? newestFilename.substring(0, 35) + '...' : newestFilename;
+            fileNameCell.textContent = filenameValue;
+            fileNameCell.style.padding = '4px 8px';
+            fileNameCell.style.textAlign = 'left';
+            fileNameCell.style.fontFamily = 'monospace';
+            fileNameCell.title = newestFilename; // Show full filename on hover
+            console.log('[DEBUG] Row 2 - Newest File Name:', filenameValue);
 
-            // Row 3: first filename (partial)
+            // Row 3: total_files + total_size
             const row3 = summaryTable.insertRow();
-            row3.insertCell(0).textContent = 'Sample File:';
+            row3.insertCell(0).textContent = 'Files / Size:';
             row3.cells[0].style.fontWeight = 'bold';
             row3.cells[0].style.padding = '4px 8px';
-            const filenameCell = row3.insertCell(1);
-            const firstFilename = data.first_filename || 'N/A';
-            filenameCell.textContent = firstFilename.length > 20 ? firstFilename.substring(0, 20) + '...' : firstFilename;
-            filenameCell.style.padding = '4px 8px';
-            filenameCell.style.textAlign = 'left'; // Left-aligned as requested
-            filenameCell.style.fontFamily = 'monospace';
-            filenameCell.title = firstFilename; // Show full filename on hover
+            const filesSizeCell = row3.insertCell(1);
+            const filesSizeValue = `${data.total_files || 0} files / ${formatFileSize(data.total_size || 0)}`;
+            filesSizeCell.textContent = filesSizeValue;
+            filesSizeCell.style.padding = '4px 8px';
+            filesSizeCell.style.textAlign = 'left';
+            console.log('[DEBUG] Row 3 - Files/Size:', filesSizeValue);
 
             // Row 4: summary status
             const row4 = summaryTable.insertRow();
@@ -272,25 +435,31 @@ document.addEventListener('DOMContentLoaded', () => {
             row4.cells[0].style.fontWeight = 'bold';
             row4.cells[0].style.padding = '4px 8px';
             const statusCell = row4.insertCell(1);
-            // Fix: Use the backend's status_type field, not has_newer_files
-            const statusType = data.status_type || 'uptodate';
-            const statusText = statusType === 'need_generate' ? 'Need Generate' :
-                              statusType === 'obsolete_data' ? 'Obsolete Data' : 'Uptodate';
-            const statusColor = statusType === 'need_generate' ? '#f44336' :
-                               statusType === 'obsolete_data' ? '#FF9800' : '#4CAF50';
-            statusCell.textContent = statusText;
+
+            // MVC VIEW LAYER: Frontend determines display format from backend data
+            const statusInfo = formatDataStatusDisplay(data);
+            statusCell.textContent = statusInfo.text;
             statusCell.style.padding = '4px 8px';
-            statusCell.style.textAlign = 'left'; // Left-aligned as requested
+            statusCell.style.textAlign = 'left';
             statusCell.style.fontWeight = 'bold';
-            statusCell.style.color = statusColor;
+            statusCell.style.color = statusInfo.color;
+            console.log('[DEBUG] Row 4 - Status:', statusInfo);
 
             dataStatusDiv.appendChild(summaryTable);
+            console.log('[DEBUG] Summary table appended to DOM');
         }
     }
 
     // Display RAG storage status in exact 3-row tabular layout as specified
     function displayRAGStatus(data) {
+        console.log('[DEBUG] displayRAGStatus called with data:', { dataKeys: Object.keys(data), is_up_to_date: data.is_up_to_date, storage_info: data.storage_info });
+
         const ragStatusDiv = document.getElementById('rag-status');
+        if (!ragStatusDiv) {
+            console.log('[DEBUG] ERROR: rag-status element not found!');
+            return;
+        }
+
         ragStatusDiv.innerHTML = '';
 
         // Create table for storage status (3 specific rows as specified)
@@ -307,9 +476,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const creationCell = row1.insertCell(1);
         // Fix: Use correct field from backend
         const storageInfo = data.storage_info || {};
-        creationCell.textContent = storageInfo.last_modified ? formatDate(storageInfo.last_modified) : 'N/A';
+        const creationValue = storageInfo.last_modified ? formatDate(storageInfo.last_modified) : 'N/A';
+        creationCell.textContent = creationValue;
         creationCell.style.padding = '4px 8px';
         creationCell.style.textAlign = 'left'; // Left-aligned as requested
+        console.log('[DEBUG] RAG Row 1 - Creation Time:', creationValue);
 
         // Row 2: rag_storage_hash (no hash available from backend)
         const row2 = storageTable.insertRow();
@@ -318,9 +489,11 @@ document.addEventListener('DOMContentLoaded', () => {
         row2.cells[0].style.padding = '4px 8px';
         const fileCountCell = row2.insertCell(1);
         const storageFiles = storageInfo.storage_files || [];
-        fileCountCell.textContent = `${storageFiles.length} files`;
+        const fileCountValue = `${storageFiles.length} files`;
+        fileCountCell.textContent = fileCountValue;
         fileCountCell.style.padding = '4px 8px';
         fileCountCell.style.textAlign = 'left'; // Left-aligned as requested
+        console.log('[DEBUG] RAG Row 2 - Storage Files:', fileCountValue);
 
         // Row 3: summary status
         const row3 = storageTable.insertRow();
@@ -349,8 +522,10 @@ document.addEventListener('DOMContentLoaded', () => {
         statusCell.style.textAlign = 'left'; // Left-aligned as requested
         statusCell.style.fontWeight = 'bold';
         statusCell.style.color = statusColor;
+        console.log('[DEBUG] RAG Row 3 - Status:', statusText, 'Color:', statusColor);
 
         ragStatusDiv.appendChild(storageTable);
+        console.log('[DEBUG] RAG storage table appended to DOM');
     }
 
     // Handle generate button click
@@ -359,11 +534,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const generateBtn = document.getElementById('generate-btn');
         const progressSection = document.querySelector('.progress-section');
+        const ragSelect = document.getElementById('rag-type-select');
 
         try {
             logToTerminal('info', 'Starting RAG generation process...');
 
-            const ragSelect = document.getElementById('rag-type-select');
             const selectedItem = ragSelect ? ragSelect.value : null;
 
             // Validate RAG type selection
@@ -390,6 +565,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 generationTaskId = data.task_id;
                 isGenerating = true;
 
+                // DISABLE RAG TYPE SELECTOR DURING GENERATION
+                const ragSelect = document.getElementById('rag-type-select');
+                if (ragSelect) {
+                    ragSelect.disabled = true;
+                    ragSelect.style.opacity = '0.6';
+                    ragSelect.style.cursor = 'not-allowed';
+                    ragSelect.style.pointerEvents = 'none'; // Additional disabling
+                    ragSelect.style.backgroundColor = '#f5f5f5'; // Visual feedback
+                    ragSelect.title = 'RAG type cannot be changed during generation'; // Tooltip
+                    logToTerminal('info', 'RAG type selector disabled during generation');
+                } else {
+                    logToTerminal('warning', 'Could not find RAG type selector element');
+                }
+
                 generateBtn.disabled = true;
                 generateBtn.textContent = '🔄 Generating...';
                 if (progressSection) {
@@ -399,8 +588,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 logToTerminal('success', `Generation started with task ID: ${data.task_id} for RAG type: ${selectedItem}`);
 
-                // Connect to WebSocket for real-time updates (STATE-BASED)
-                connectTerminalWebSocket();
+                // Connect to WebSocket for real-time updates (STATE-BASED) - include task_id for proper routing
+                connectTerminalWebSocket(data.task_id);
 
                 // Initialize frontend state sync with backend (no polling)
                 initializeFrontendStateSync();
@@ -477,6 +666,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Set local generation flag (frontend state sync)
         isGenerating = false;
 
+        // RE-ENABLE RAG TYPE SELECTOR AFTER GENERATION
+        const ragSelect = document.getElementById('rag-type-select');
+        if (ragSelect) {
+            ragSelect.disabled = false;
+            ragSelect.style.opacity = '1';
+            ragSelect.style.cursor = 'pointer';
+            ragSelect.style.pointerEvents = 'auto';
+            ragSelect.style.backgroundColor = '';
+            ragSelect.removeAttribute('title');
+            logToTerminal('info', 'RAG type selector re-enabled after generation completion');
+        }
+
         // IMMEDIATE button re-enabling (prevent race conditions)
         const generateBtn = document.getElementById('generate-btn');
         if (generateBtn) {
@@ -497,10 +698,16 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTerminalHeader('ST_COMPLETED', 100);
         updateProgressBar(100);
 
-        // Update cache after generation (reactive to backend changes)
-        cacheManager.remove(`data_status_${currentRAGType}`);
-        cacheManager.remove(`rag_status_${currentRAGType}`);
-        cacheManager.remove(`detailed_data_status_${currentRAGType}`);
+        // AUTO-REFRESH STATUS AFTER GENERATION COMPLETES
+        logToTerminal('info', 'Auto-refreshing status after generation completion...');
+        try {
+            // FORCE fresh data load by bypassing cache completely
+            await loadDataStatus(true);  // forceFresh=true
+            await loadRAGStatus(true);   // forceFresh=true
+            logToTerminal('success', '✅ Status updated automatically after generation');
+        } catch (error) {
+            logToTerminal('warning', `⚠️ Auto-refresh failed: ${error.message}`);
+        }
 
         // NON-POLLING: Let backend push status updates via WebSocket events
         // No setTimeout polling - wait for backend to send status updates
@@ -520,6 +727,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         isGenerating = false;
+
+        // RE-ENABLE RAG TYPE SELECTOR AFTER GENERATION FAILURE
+        const ragSelect = document.getElementById('rag-type-select');
+        if (ragSelect) {
+            ragSelect.disabled = false;
+            ragSelect.style.opacity = '1';
+            ragSelect.style.cursor = 'pointer';
+            ragSelect.style.pointerEvents = 'auto';
+            ragSelect.style.backgroundColor = '';
+            ragSelect.title = '';
+            logToTerminal('info', 'RAG type selector re-enabled after generation failure');
+        }
 
         const generateBtn = document.getElementById('generate-btn');
         generateBtn.disabled = false;
@@ -575,13 +794,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Connect to WebSocket for real-time terminal updates
-    function connectTerminalWebSocket() {
+    function connectTerminalWebSocket(taskId = null) {
         if (websocket) {
             websocket.close();
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/generate`;
+        // Include task_id in WebSocket URL to ensure proper message routing
+        const wsUrl = taskId
+            ? `${protocol}//${window.location.host}/ws/generate?task_id=${encodeURIComponent(taskId)}`
+            : `${protocol}//${window.location.host}/ws/generate`;
 
         websocket = new WebSocket(wsUrl);
 
@@ -681,70 +903,53 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle encapsulated progress data with control points (MVC View)
     function handleEncapsulatedProgress(data) {
         try {
-            // Normalize state names from backend (ready, parser, generation) to frontend (ST_READY, ST_PARSER, ST_GENERATION)
+            // For plain JSON data from WebSocket, use directly without DTO validation
             const normalizedData = { ...data };
-            if (data.state) {
-                const stateMap = {
-                    'ready': 'ST_READY',
-                    'parser': 'ST_PARSER',
-                    'generation': 'ST_GENERATION',
-                    'error': 'ST_ERROR',
-                    'completed': 'ST_READY'
-                };
-                normalizedData.state = stateMap[data.state] || data.state;
-            }
 
-            // Create ProgressData DTO from incoming data
-            const progressData = new ProgressData(normalizedData);
-
-            // Control Point: Only process validated data
-            if (!progressData._validated) {
-                console.warn('[MVC] Received unvalidated progress data:', data);
-                console.warn('[MVC] Validation failed for:', {
-                    progress: normalizedData.progress,
-                    state: normalizedData.state,
-                    progressValid: normalizedData.progress >= 0 && normalizedData.progress <= 100,
-                    stateValid: Object.values(GenerationState).includes(normalizedData.state)
-                });
-                logToTerminal('warning', 'Received unvalidated progress data from server');
+            // Ensure we have valid progress data
+            if (normalizedData.progress === undefined || normalizedData.progress === null ||
+                normalizedData.state === undefined || !normalizedData.state) {
+                console.warn('[MVC] Invalid progress data received:', data);
                 return;
             }
 
-            // Always update UI (remove the _rendered check that was preventing updates)
-            // Progress updates go to Live Terminal as 'progress' category
+            // Progress is already validated by backend - use directly
+            console.log('[PROGRESS] Processing:', normalizedData.state, normalizedData.progress + '%', normalizedData.message);
+
+            // Always update UI with progress data
+            // Progress updates go to Live Terminal
             if (liveTerminalOutput) {
                 const liveEntry = document.createElement('div');
                 liveEntry.className = 'log-entry log-info';
-                liveEntry.innerHTML = `<span class="log-timestamp">[${new Date().toLocaleTimeString()}]</span> [${progressData.state.replace('ST_', '')}] ${progressData.message}`;
+                liveEntry.innerHTML = `<span class="log-timestamp">[${new Date().toLocaleTimeString()}]</span> [${normalizedData.state.replace('ST_', '')}] ${normalizedData.message || ''}`;
                 liveTerminalOutput.appendChild(liveEntry);
                 liveTerminalOutput.scrollTop = liveTerminalOutput.scrollHeight;
             }
 
-            // Update UI with encapsulated data
-            applyMVCStateStyling(progressData.state);
-            updateTerminalHeader(progressData.state, progressData.progress);
-            updateProgressBar(progressData.progress);
-            updateRotatingIcon(progressData.state);
-
-            // Control Point: Mark data as rendered by view
-            progressData.markRendered();
+            // Update UI with progress data
+            applyMVCStateStyling(normalizedData.state);
+            updateTerminalHeader(normalizedData.state, normalizedData.progress);
+            updateProgressBar(normalizedData.progress);
+            updateRotatingIcon(normalizedData.state);
 
             // Handle state-specific completion logic
-            if (progressData.state === 'ST_READY' && progressData.message && progressData.message.includes('completed successfully')) {
+            if ((normalizedData.state === 'ST_READY' || normalizedData.state === 'ST_COMPLETED') &&
+                normalizedData.message && normalizedData.message.includes('completed successfully')) {
                 // Send completion to Main Terminal as 'important' event
                 logToTerminal('success', '✅ Generation completed successfully');
                 handleGenerationComplete();
-            } else if (progressData.state === 'ST_ERROR') {
-                console.warn('[GENERATION ERROR]', progressData.message);
-                logToTerminal('error', `Generation failed: ${progressData.message}`);
-                handleGenerationFailed(progressData.message);
-            } else if (progressData.state === 'ST_COMPLETED') {
+            } else if (normalizedData.state === 'ST_ERROR') {
+                console.warn('[GENERATION ERROR]', normalizedData.message);
+                logToTerminal('error', `Generation failed: ${normalizedData.message}`);
+                handleGenerationFailed(normalizedData.message);
+            } else if (normalizedData.state === 'ST_COMPLETED') {
                 // Send completion to Main Terminal as 'important' event
                 logToTerminal('success', '✅ Generation completed successfully');
                 handleGenerationComplete();
             }
+
         } catch (error) {
-            console.error('[MVC] Error processing encapsulated progress data:', error);
+            console.error('[MVC] Error processing progress data:', error, data);
             logToTerminal('error', `Failed to process progress data: ${error.message}`);
         }
     }
@@ -1145,7 +1350,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function displayCacheStatus() {
         const status = await getCacheStatus();
         if (status) {
-            logToTerminal('info', `Cache Status - Loaded: ${status.cache_loaded}, Size: ${status.cache_size}, Types: ${status.cached_rag_types.join(', ')}`);
+            const cachedTypes = status.cached_rag_types || [];
+            const typesStr = Array.isArray(cachedTypes) ? cachedTypes.join(', ') : 'None';
+            logToTerminal('info', `Cache Status - Loaded: ${status.cache_loaded}, Size: ${status.cache_size}, Types: ${typesStr}`);
         }
     }
 
@@ -1156,19 +1363,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle RAG type selection change
     async function handleRAGTypeChange(event) {
         const newRAGType = event.target.value;
+        console.log('[DEBUG] handleRAGTypeChange called:', { newRAGType, currentRAGType, isDifferent: newRAGType !== currentRAGType });
+
         if (newRAGType && newRAGType !== currentRAGType) {
+            console.log('[DEBUG] RAG type change detected, updating from', currentRAGType, 'to', newRAGType);
+
             // Invalidate cache for old RAG type
             cacheManager.remove(`data_status_${currentRAGType}`);
             cacheManager.remove(`rag_status_${currentRAGType}`);
             cacheManager.remove(`detailed_data_status_${currentRAGType}`);
+            console.log('[DEBUG] Cache invalidated for old RAG type:', currentRAGType);
 
             currentRAGType = newRAGType;
             cacheManager.setCurrentRAGType(newRAGType);
+            console.log('[DEBUG] Current RAG type updated to:', newRAGType);
+
             logToTerminal('info', `RAG type changed to: ${newRAGType}`);
 
-            // Refresh status displays for new RAG type
-            await loadDataStatus();
-            await loadRAGStatus();
+            // Force refresh status displays for new RAG type to ensure immediate update
+            console.log('[DEBUG] Calling loadDataStatus with forceFresh=true');
+            await loadDataStatus(true);  // forceFresh=true
+
+            console.log('[DEBUG] Calling loadRAGStatus with forceFresh=true');
+            await loadRAGStatus(true);   // forceFresh=true
+
+            console.log('[DEBUG] RAG type change handler completed');
 
             // CRITICAL FIX: Check if new RAG type needs generation and update UI state accordingly
             // This ensures proper state transition from Completed to Ready when switching to "Need Generate" status
@@ -1176,12 +1395,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cacheManager.has(dataStatusCacheKey)) {
                 const dataStatus = cacheManager.get(dataStatusCacheKey);
 
-                // Check if data status indicates generation is needed
-                const statusType = dataStatus.status_type || 'uptodate';
-                const needsGeneration = statusType === 'need_generate' || statusType === 'obsolete_data';
+                // Check if data status indicates generation is needed by analyzing backend data
+                const totalFiles = dataStatus.total_files || 0;
+                const storageStatus = dataStatus.storage_status || 'empty';
+                const comparisonData = dataStatus.comparison_data || {};
+                const isUpToDate = comparisonData.is_up_to_date;
+
+                // Determine if generation is needed based on backend logic
+                let needsGeneration = false;
+                if (totalFiles === 0) {
+                    // No data files - no generation possible
+                    needsGeneration = false;
+                } else if (storageStatus === 'empty') {
+                    // Data exists but no storage - generation needed
+                    needsGeneration = true;
+                } else if (isUpToDate === false) {
+                    // Storage exists but data has changed - regeneration needed
+                    needsGeneration = true;
+                } else {
+                    // Storage exists and is up to date
+                    needsGeneration = false;
+                }
 
                 if (needsGeneration && !isGenerating) {
-                    // Transition from Completed/Error state to Ready state
+                    // Transition to Ready state when generation is needed
                     logToTerminal('info', `RAG type "${newRAGType}" needs generation - transitioning to Ready state`);
                     applyMVCStateStyling('ST_READY');
                     updateTerminalHeader('ST_READY', 0);
@@ -1200,7 +1437,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Keep completed button text
                     updateGenerateButtonText('completed');
+                } else if (!isGenerating) {
+                    // Default case: assume ready state for any other scenario
+                    logToTerminal('info', `RAG type "${newRAGType}" - defaulting to Ready state`);
+                    applyMVCStateStyling('ST_READY');
+                    updateTerminalHeader('ST_READY', 0);
+                    updateProgressBar(0);
+                    updateRotatingIcon('ST_READY');
+                    updateGenerateButtonText('start');
                 }
+            } else {
+                // No cached data available - default to ready state
+                logToTerminal('info', `RAG type "${newRAGType}" - no cached data, defaulting to Ready state`);
+                applyMVCStateStyling('ST_READY');
+                updateTerminalHeader('ST_READY', 0);
+                updateProgressBar(0);
+                updateRotatingIcon('ST_READY');
+                updateGenerateButtonText('start');
             }
 
             // Reset detail views
@@ -1319,8 +1572,8 @@ document.addEventListener('DOMContentLoaded', () => {
         detailTable.style.display = 'block';
 
         // FIX: Use correct backend field names for files array
-        if (data.files && data.files.length > 0) {
-            data.files.forEach(file => {
+        if (data.data_files && data.data_files.length > 0) {
+            data.data_files.forEach(file => {
                 const row = detailTable.insertRow();
 
                 // Column 1: filename (truncated to fit)

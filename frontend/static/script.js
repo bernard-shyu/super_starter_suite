@@ -332,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Chat message handling
+    // Enhanced chat message handling with UI enhancements
     function addMessage(sender, content, messageType = 'normal') {
         const messageContainer = document.getElementById('message-container');
         // Ensure messageContainer exists before trying to add messages
@@ -372,10 +372,16 @@ document.addEventListener('DOMContentLoaded', () => {
         messageElement.appendChild(senderElement);
         messageElement.appendChild(contentElement);
         messageContainer.appendChild(messageElement);
+
+        // Apply UI enhancements if available
+        if (window.chatUIEnhancements) {
+            window.chatUIEnhancements.enhanceMessageElement(messageElement);
+        }
+
         messageContainer.scrollTop = messageContainer.scrollHeight;
     }
 
-    // Send message to workflow API
+    // Enhanced send message to workflow API with UI enhancements
     async function sendMessage() {
         const userInput = document.getElementById('user-input');
         if (!userInput) {
@@ -391,10 +397,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Add user message
         addMessage('user', message);
         userInput.value = '';
 
         updateStatus(`Sending message to ${currentWorkflow}...`, 'in-progress');
+
+        // Show typing indicator for AI response
+        let typingIndicator = null;
+        if (window.chatUIEnhancements) {
+            typingIndicator = window.chatUIEnhancements.showTypingIndicator();
+        }
 
         try {
             const workflowType = document.querySelector(`.workflow-button[data-workflow="${currentWorkflow}"]`).closest('.adapted-workflows') ? 'adapted' : 'ported';
@@ -411,11 +424,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const htmlContent = await response.text();
+
+            // Hide typing indicator and add AI response
+            if (window.chatUIEnhancements && typingIndicator) {
+                window.chatUIEnhancements.hideTypingIndicator();
+            }
             addMessage('ai', htmlContent);
             updateStatus(`Message sent to ${currentWorkflow}.`, 'success');
+
         } catch (error) {
             console.error('Error sending message:', error);
-            addMessage('ai', `<p style="color: red;">Error: ${error.message}</p>`);
+
+            // Hide typing indicator
+            if (window.chatUIEnhancements && typingIndicator) {
+                window.chatUIEnhancements.hideTypingIndicator();
+            }
+
+            // Use enhanced error handling if available
+            if (window.chatUIEnhancements) {
+                window.chatUIEnhancements.showErrorWithRetry(
+                    `Failed to send message: ${error.message}`,
+                    () => sendMessage() // Retry function
+                );
+            } else {
+                // Fallback to basic error message
+                addMessage('ai', `<p style="color: red;">Error: ${error.message}</p>`);
+            }
+
             updateStatus(`Error sending message.`, 'error');
         }
     }

@@ -130,15 +130,15 @@ class ProgressData {
 class StatusData {
     constructor(data = {}) {
         // Essential Properties (Always Carried Across Boundaries)
-        this.dataFileNewest = data.dataFileNewest || data.data_file_newest || null;
+        this.dataNewestTime = data.dataNewestTime || data.data_newest_time || null;
         this.totalFiles = data.totalFiles || data.total_files || 0;
         this.totalSize = data.totalSize || data.total_size || 0;
-        this.files = data.files || [];
+        this.dataFiles = data.dataFiles || data.data_files || [];
         this.hasNewerFiles = data.hasNewerFiles || data.has_newer_files || false;
 
         // Essential Context Properties
         this.ragType = data.ragType || data.rag_type || "RAG";
-        this.lastUpdated = data.lastUpdated || (data.last_updated ? new Date(data.last_updated) : new Date());
+        this.lastUpdated = data.lastUpdated || (data.meta_last_update ? new Date(data.meta_last_update) : new Date());
 
         // Storage Status Properties
         this.storageCreation = data.storageCreation || data.storage_creation || null;
@@ -235,10 +235,10 @@ class StatusData {
      */
     toDict() {
         return {
-            dataFileNewest: this.dataFileNewest,
+            dataNewestTime: this.dataNewestTime,
             totalFiles: this.totalFiles,
             totalSize: this.totalSize,
-            files: this.files,
+            data_files: this.dataFiles,
             hasNewerFiles: this.hasNewerFiles,
             ragType: this.ragType,
             lastUpdated: this.lastUpdated.toISOString(),

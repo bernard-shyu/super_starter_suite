@@ -9,10 +9,12 @@ from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 from typing import Dict, Any, Optional
 
-from super_starter_suite.shared.decorators import bind_user_context
+from super_starter_suite.shared.decorators import bind_rag_session
 from super_starter_suite.rag_indexing.generation import run_generation_with_progress, get_generation_status, get_generation_logs
-from super_starter_suite.shared.config_manager import ConfigManager
-from super_starter_suite.rag_indexing.generate_ui_cache import GenerateUICacheManager
+from super_starter_suite.shared.config_manager import ConfigManager, config_manager
+
+# Initialize logger
+logger = config_manager.get_logger("main")
 
 # Create router for RAG indexing endpoints
 router = APIRouter()
@@ -21,8 +23,22 @@ router = APIRouter()
 # GENERATE UI ENDPOINTS
 # ============================================================================
 
-@bind_user_context
+# ============================================================================
+# PHASE 1: SINGLE DECORATOR PATTERN - CLEAN ARCHITECTURE
+# ============================================================================
+# Unified approach using single @bind_rag_session decorator
+#
+# DECORATOR ORDER: @router → @bind_rag_session
+#
+# Why this order?
+# 1. @router.post() captures the decorated function for FastAPI routing
+# 2. @bind_rag_session handles both user_config and RAG session initialization
+#
+# This eliminates complexity and ensures clean separation of concerns.
+# ============================================================================
+
 @router.post("/api/generate")
+@bind_rag_session
 async def generate_rag_index(request: Request, background_tasks: BackgroundTasks):
     """Generate RAG index for the specified RAG type with real-time progress updates."""
     user_id = request.state.user_id
@@ -64,23 +80,39 @@ async def generate_rag_index(request: Request, background_tasks: BackgroundTasks
 
     gen_logger.info("Starting background generation task with progress callbacks")
 
-    # Import MVC Controller for proper MVC architecture
-    try:
-        from .generate_websocket import get_mvc_controller
-    except ImportError:
-        from generate_websocket import get_mvc_controller
+    # MVC processing handled by session's GenerateManager (no global state)
+    session = request.state.rag_session
 
-    # Get MVC Controller instance
-    mvc_controller = get_mvc_controller()
-
-    # Create progress callback function that sends raw messages to MVC Controller
+    # Create progress callback function for session's GenerateManager
     async def progress_callback(raw_message: str):
-        """Callback to send raw log messages to MVC Controller for processing."""
-        await mvc_controller.handle_generation_output(raw_message)
+        """Send raw messages to session's GenerateManager for MVC processing and broadcast to WebSocket."""
+        # Process through MVC pipeline: raw message → GenerateManager → ProgressData
+        progress_data = session.process_console_output(raw_message, task_id, rag_type)
+
+        # If GenerateManager returns structured progress data, broadcast to WebSocket
+        if progress_data:
+            # Import WebSocket broadcasting functions
+            try:
+                from super_starter_suite.rag_indexing.generate_websocket import broadcast_generation_progress
+
+                # ProgressData.state.value is already in the correct format (e.g., 'ST_PARSER')
+                # Broadcast progress directly to WebSocket-connected clients
+                await broadcast_generation_progress(
+                    task_id,
+                    progress_data.state.value,
+                    int(progress_data.progress),
+                    progress_data.message
+                )
+
+                gen_logger.debug(f"Progress broadcast: {progress_data.state.value} {progress_data.progress}% - {progress_data.message}")
+
+            except ImportError as e:
+                gen_logger.warning(f"WebSocket broadcasting unavailable: {e}")
+            except Exception as ws_error:
+                gen_logger.warning(f"Failed to broadcast progress: {ws_error}")
 
     async def status_callback(status: str, message: str):
-        """Callback to broadcast status updates via WebSocket"""
-        # Status updates can be handled here if needed
+        """Status callback - handled by session if needed."""
         pass
 
     # Start a background generation task with progress callbacks
@@ -97,17 +129,19 @@ async def generate_rag_index(request: Request, background_tasks: BackgroundTasks
         "task_id": task_id
     }
 
-@bind_user_context
 @router.get("/api/generate/status/{task_id}")
-async def get_generation_status_endpoint(task_id: str):
+@bind_rag_session
+async def get_generation_status_endpoint(request: Request, task_id: str):
     """Check the status of a RAG generation task."""
+    print(f"DEBUG ENDPOINT: get_generation_status_endpoint called with task_id={task_id}")
     status_info = get_generation_status(task_id)
     return status_info
 
-@bind_user_context
 @router.get("/api/generate/logs/{task_id}")
-async def get_generation_logs_endpoint(task_id: str):
+@bind_rag_session
+async def get_generation_logs_endpoint(request: Request, task_id: str):
     """Get logs for a specific generation task."""
+    print(f"DEBUG ENDPOINT: get_generation_logs_endpoint called with task_id={task_id}")
     # Get the captured logs from the generation process
     logs = get_generation_logs(task_id)
 
@@ -139,8 +173,8 @@ async def get_generation_logs_endpoint(task_id: str):
 
     return {"logs": logs}
 
-@bind_user_context
 @router.get("/api/generate/rag_type_options")
+@bind_rag_session
 async def get_rag_type_options(request: Request):
     """Return the list of available RAG types from the user's system configuration."""
     user_config = request.state.user_config
@@ -151,104 +185,176 @@ async def get_rag_type_options(request: Request):
 # CACHE MANAGEMENT ENDPOINTS
 # ============================================================================
 
-@bind_user_context
 @router.post("/api/generate/cache/load")
+@bind_rag_session
 async def load_generate_cache(request: Request):
     """
     Load metadata cache for the Generate UI.
 
     This endpoint initializes the cache when entering the Generate UI.
-    Uses persistent cache manager for proper state management across requests.
+    Uses session-based cache management for proper Generate UI session lifecycle.
     """
-    user_config = request.state.user_config
-
     try:
-        # Get persistent cache manager for this user (maintains state between requests)
-        from super_starter_suite.rag_indexing.generate_ui_cache import get_cache_manager
-        cache_manager = get_cache_manager(user_config)
-        success = cache_manager.load_metadata_cache()
+        # Decorators should have set up user_config and rag_session
+        # If they're missing, the decorators didn't execute properly
+        if not hasattr(request.state, 'user_config'):
+            raise HTTPException(status_code=500, detail="User context not available - decorator binding failed")
+
+        if not hasattr(request.state, 'rag_session'):
+            raise HTTPException(status_code=500, detail="RAG session not available - decorator binding failed")
+
+        session = request.state.rag_session
+
+        # Check if session is properly initialized
+        if not session.is_initialized:
+            # Try to initialize session if not already done
+            if not session.initialize_session():
+                raise HTTPException(status_code=500, detail="Failed to initialize session for cache loading")
+
+        # Load cache within session context
+        success = session.load_cache()
 
         if success:
             return {"message": "Metadata cache loaded successfully"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to load metadata cache")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading metadata cache: {str(e)}")
+            # Provide more specific error information
+            cache_error = "Cache loading failed - check file permissions and directory structure"
+            raise HTTPException(status_code=500, detail=cache_error)
 
-@bind_user_context
+    except Exception as e:
+        logger.error(f"Exception in load_generate_cache: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cache load error: {str(e)}")
+
 @router.post("/api/generate/cache/save")
+@bind_rag_session
 async def save_generate_cache(request: Request):
     """
     Save metadata cache for the Generate UI.
 
     This endpoint persists the cache when leaving the Generate UI.
-    Uses the same persistent cache manager instance that was loaded.
+    Uses session-based cache management for proper Generate UI session lifecycle.
     """
-    user_config = request.state.user_config
-
     try:
-        # Get the SAME persistent cache manager instance that was loaded
-        from super_starter_suite.rag_indexing.generate_ui_cache import get_cache_manager
-        cache_manager = get_cache_manager(user_config)
-        success = cache_manager.save_metadata_cache()
+        # Decorators should have set up user_config and rag_session
+        # If they're missing, the decorators didn't execute properly
+        if not hasattr(request.state, 'user_config'):
+            raise HTTPException(status_code=500, detail="User context not available - decorator binding failed")
+
+        if not hasattr(request.state, 'rag_session'):
+            raise HTTPException(status_code=500, detail="RAG session not available - decorator binding failed")
+
+        session = request.state.rag_session
+
+        # Check if session is properly initialized
+        if not session.is_initialized:
+            raise HTTPException(status_code=500, detail="Session not initialized - cannot save cache")
+
+        # Save cache within session context
+        success = session.save_cache()
 
         if success:
             return {"message": "Metadata cache saved successfully"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to save metadata cache")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving metadata cache: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to save metadata cache - check file permissions")
 
-@bind_user_context
+    except Exception as e:
+        logger.error(f"Exception in save_generate_cache: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cache save error: {str(e)}")
+
 @router.get("/api/generate/cache/status")
+@bind_rag_session
 async def get_generate_cache_status(request: Request):
     """
     Get cache status information for the Generate UI.
 
     Returns information about cache state, size, and loaded RAG types.
+    Uses session-based cache access for proper per-request state isolation.
     """
-    user_config = request.state.user_config
-
     try:
-        # Get cache manager to check status
-        from super_starter_suite.rag_indexing.generate_ui_cache import get_cache_manager
-        cache_manager = get_cache_manager(user_config)
+        # Decorators should have set up user_config and rag_session
+        # If they're missing, the decorators didn't execute properly
+        if not hasattr(request.state, 'user_config'):
+            raise HTTPException(status_code=500, detail="User context not available - decorator binding failed")
 
-        # Get cache status information
-        cache_status = {
-            "cache_loaded": cache_manager.is_loaded,
-            "cache_size": len(cache_manager.cache) if hasattr(cache_manager, 'cache') else 0,
-            "cached_rag_types": list(cache_manager.cache.keys()) if hasattr(cache_manager, 'cache') else []
-        }
+        if not hasattr(request.state, 'rag_session'):
+            raise HTTPException(status_code=500, detail="RAG session not available - decorator binding failed")
+
+        session = request.state.rag_session
+
+        # Check if session is properly initialized
+        if not session.is_initialized:
+            return {"cache_status": {"error": "Session not initialized"}}
+
+        # Get cache status through session (unified access point)
+        cache_status = session.get_cache_status()
 
         return {"cache_status": cache_status}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting cache status: {str(e)}")
+        logger.error(f"Exception in get_generate_cache_status: {str(e)}", exc_info=True)
+        return {"cache_status": {"error": f"Cache status error: {str(e)}"}}
 
 # ============================================================================
 # RAG MANAGEMENT ENDPOINTS
 # ============================================================================
 
-@bind_user_context
 @router.get("/api/data_status")
+@bind_rag_session
 async def get_data_status(request: Request, rag_type: str = "RAG"):
-    """Get simplified data status focused on change detection for RAG generation."""
-    user_config = request.state.user_config
+    """
+    Get cached data status from MVC session to avoid redundant scanning.
 
-    # Set the RAG type for this request
-    user_config.my_rag.set_rag_type(rag_type)
-
+    This endpoint uses session-cached StatusData instead of triggering new scans.
+    Returns complete data structure - frontend decides presentation format.
+    """
     try:
-        # Get simplified data status with change detection
-        from super_starter_suite.shared.index_utils import get_data_status_simple
-        data_status = get_data_status_simple(user_config)
+        user_config = request.state.user_config
+        session = request.state.rag_session
+        logger.debug(f"get_data_status: rag_type={rag_type}")
 
-        return data_status
+        # Set the RAG type for this request
+        user_config.my_rag.set_rag_type(rag_type)
+
+        # Get cached StatusData from session (MVC Model layer)
+        # Pass rag_type to trigger automatic switching if needed
+        status_data = session.get_status_data_info(rag_type)
+
+        if status_data.get("error"):
+            raise HTTPException(status_code=500, detail=f"No cached data available: {status_data['error']}")
+
+        # MVC COMPLIANT: Return RAW StatusData - Frontend handles ALL display formatting
+        # Backend provides raw data only, frontend (MVC View layer) determines presentation format
+        # This ensures proper separation of concerns and allows frontend to adapt display logic
+        response = {
+            # Raw data fields - no pre-formatted display logic
+            "data_newest_time": status_data.get("data_newest_time"),
+            "data_newest_file": status_data.get("data_newest_file"),
+            "total_files": status_data.get("total_files", 0),
+            "total_size": status_data.get("total_size", 0),
+            "data_files": status_data.get("data_files", []),
+            "storage_creation": status_data.get("storage_creation"),
+            "storage_status": status_data.get("storage_status", "empty"),
+            "meta_last_update": status_data.get("meta_last_update"),
+            "rag_type": status_data.get("rag_type"),
+
+            # Cache metadata for frontend awareness
+            "from_cache": True,
+
+            # Raw comparison data - frontend decides how to interpret and display
+            "comparison_data": status_data.get("comparison", {})
+        }
+
+        # DEBUG: Log final response
+        logger.debug(f"get_data_status: Final response rag_type={response.get('rag_type')}")
+
+        return response
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting data status: {str(e)}")
+        logger.error(f"Exception in get_data_status: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting cached data status: {str(e)}")
 
-@bind_user_context
 @router.get("/api/rag_status")
+@bind_rag_session
 async def get_rag_status(request: Request, rag_type: str = "RAG"):
     """Get the current status of RAG storage and compare with data metadata."""
     user_config = request.state.user_config
@@ -265,53 +371,45 @@ async def get_rag_status(request: Request, rag_type: str = "RAG"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error checking RAG status: {str(e)}")
 
-@bind_user_context
-@router.post("/api/save_metadata")
-async def save_metadata(request: Request):
-    """Save current data status as metadata for the user's RAG type."""
-    user_config = request.state.user_config
-
-    try:
-        # Scan current data
-        from super_starter_suite.shared.index_utils import scan_data_directory, save_data_metadata
-        current_data = scan_data_directory(user_config.my_rag.data_path)
-
-        # Save metadata for this RAG type
-        success = save_data_metadata(
-            user_config.my_rag.rag_root,
-            user_config.my_rag.rag_type,
-            current_data
-        )
-
-        if success:
-            return {"message": f"Metadata saved successfully for RAG type '{user_config.my_rag.rag_type}'"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to save metadata")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving metadata: {str(e)}")
 
 # ============================================================================
 # DETAILED STATUS ENDPOINTS
 # ============================================================================
-
-@bind_user_context
 @router.get("/api/detailed_data_status")
+@bind_rag_session
 async def get_detailed_data_status(request: Request, rag_type: str = "RAG"):
     """
-    Get detailed data status with file-by-file information for the specified RAG type.
+    Get detailed cached data status with file-by-file information.
 
-    This endpoint provides comprehensive file information including modification dates,
-    file sizes, and change status for each file in the data directory.
+    This endpoint uses session-cached StatusData to avoid redundant scanning.
+    Returns the same data structure as before but from MVC cache.
     """
-    user_config = request.state.user_config
-
-    # Set the RAG type for this request
-    user_config.my_rag.set_rag_type(rag_type)
-
     try:
-        from super_starter_suite.shared.index_utils import get_detailed_data_status
-        detailed_status = get_detailed_data_status(user_config)
-        return detailed_status
+        user_config = request.state.user_config
+        session = request.state.rag_session
+
+        # Set the RAG type for this request
+        user_config.my_rag.set_rag_type(rag_type)
+
+        # Get cached StatusData from session (MVC Model layer)
+        # Pass rag_type to trigger automatic switching if needed
+        status_data = session.get_status_data_info(rag_type)
+
+        if status_data.get("error"):
+            raise HTTPException(status_code=500, detail=f"No cached data available: {status_data['error']}")
+
+        # Convert cached StatusData to detailed response format
+        response = {
+            "rag_type": status_data.get("rag_type"),
+            "total_files": status_data.get("total_files", 0),
+            "total_size": status_data.get("total_size", 0),
+            "data_files": status_data.get("data_files", []),
+            "last_scan": status_data.get("meta_last_update"),
+            "from_cache": True
+        }
+
+        return response
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting detailed data status: {str(e)}")
+        logger.error(f"Exception in get_detailed_data_status: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting cached detailed data status: {str(e)}")

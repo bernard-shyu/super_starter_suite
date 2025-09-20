@@ -4,7 +4,7 @@ from super_starter_suite.shared.config_manager import UserConfig, config_manager
 from llama_index.core.settings import Settings
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
-llama_logger = config_manager.get_logger("llama")
+llama_logger = config_manager.get_logger("shared")
 
 # ------------------------------------------------------------------
 # New utilities

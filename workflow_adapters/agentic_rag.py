@@ -16,7 +16,7 @@ from llama_index.server.models.chat import ChatAPIMessage, ChatRequest
 from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
-adapter_logger = config_manager.get_logger("adapter")
+adapter_logger = config_manager.get_logger("workflow")
 router = APIRouter()
 
 @router.post("/chat")

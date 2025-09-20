@@ -12,7 +12,7 @@ import time
 from super_starter_suite.shared.config_manager import config_manager
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
-adapter_logger = config_manager.get_logger("adapter")
+adapter_logger = config_manager.get_logger("workflow")
 router = APIRouter()
 
 @router.post("/chat")

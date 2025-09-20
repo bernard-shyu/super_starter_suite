@@ -17,8 +17,8 @@ from datetime import datetime
 # Import centralized logging
 from super_starter_suite.shared.config_manager import config_manager
 
-# Get logger for terminal output (pure logging only)
-logger = config_manager.get_logger("terminal_output")
+# Get logger for terminal output (MVC internal communication)
+logger = logging.getLogger("MVC_terminal")
 
 # In-memory store for generation logs (global)
 generation_logs: Dict[str, List[str]] = {}
@@ -381,13 +381,7 @@ def capture_stdout_output(func, *args, **kwargs):
 
         index = capture_stdout_output(generate_rag_index)
     """
-    # Import here to avoid circular imports
-    try:
-        from super_starter_suite.shared.config_manager import config_manager
-        logger = config_manager.get_logger("rag_capture")
-    except ImportError:
-        import logging
-        logger = logging.getLogger("rag_capture")
+    # Use the existing logger defined at module level
 
     def stdout_callback(captured_text: str):
         """Process captured stdout output (TQDM progress bars, etc.)."""
@@ -441,7 +435,7 @@ def capture_stdout_output(func, *args, **kwargs):
     finally:
         # Always restore stdout/stderr
         stdout_capture.stop_capture()
-        logger.debug("Stdout capture stopped, stdout/stderr restored")
+        logger.info("Stdout capture stopped, stdout/stderr restored")
 
 
 def wrap_with_stdout_capture(func):

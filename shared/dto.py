@@ -11,6 +11,16 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Union
 from enum import Enum
 import uuid
+import json
+import os
+from pathlib import Path
+
+# Import for filesystem operations
+from super_starter_suite.shared.index_utils import calculate_storage_hash
+from super_starter_suite.shared.config_manager import config_manager
+
+# Get logger for StatusData operations
+logger = config_manager.get_logger("dto")
 
 
 class GenerationState(Enum):
@@ -106,15 +116,16 @@ class StatusData:
     """
 
     # Essential Properties (Always Carried Across Boundaries)
-    data_file_newest: Optional[str] = None
+    data_newest_time: Optional[str] = None
+    data_newest_file: Optional[str] = None
     total_files: int = 0
     total_size: int = 0
-    files: List[Dict[str, Any]] = field(default_factory=list)
+    data_files: List[Dict[str, Any]] = field(default_factory=list)
     has_newer_files: bool = False
 
     # Essential Context Properties
     rag_type: str = "RAG"
-    last_updated: datetime = field(default_factory=datetime.now)
+    meta_last_update: datetime = field(default_factory=datetime.now)
 
     # Storage Status Properties
     storage_creation: Optional[str] = None
@@ -131,7 +142,7 @@ class StatusData:
 
     def is_stale(self) -> bool:
         """Control Point: Check if data is stale"""
-        return datetime.now() - self.last_updated > self._stale_threshold
+        return datetime.now() - self.meta_last_update > self._stale_threshold
 
     def should_refresh(self) -> bool:
         """Control Point: Determine if data needs refresh"""
@@ -167,19 +178,20 @@ class StatusData:
         else:
             self.storage_status = "healthy"
 
-        self.last_updated = datetime.now()
+        self.meta_last_update = datetime.now()
         return True
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (essential properties only)"""
         return {
-            "data_file_newest": self.data_file_newest,
+            "data_newest_time": self.data_newest_time,
+            "data_newest_file": self.data_newest_file,
             "total_files": self.total_files,
             "total_size": self.total_size,
-            "files": self.files,
+            "data_files": self.data_files,
             "has_newer_files": self.has_newer_files,
             "rag_type": self.rag_type,
-            "last_updated": self.last_updated.isoformat(),
+            "meta_last_update": self.meta_last_update.isoformat(),
             "storage_creation": self.storage_creation,
             "storage_files_count": self.storage_files_count,
             "storage_hash": self.storage_hash,
@@ -191,6 +203,184 @@ class StatusData:
             "_validated": self._validated
         }
 
+    @classmethod
+    def load_from_file(cls, user_config, rag_type: str) -> Optional['StatusData']:
+        """
+        BRIDGE METHOD: Load StatusData by delegating to shared/index_utils.py
+
+        Following architectural guidelines:
+        - shared/index_utils.py: Single responsibility for METADATA file operations
+        - shared/dto.py: Bridge role, data format conversion, NO direct file operations
+        - shared/dto.py: Responsible for data format conversion (Dict ↔ List, timestamp formats)
+
+        Args:
+            user_config: User's configuration containing RAG paths
+            rag_type: The RAG type to load metadata for
+
+        Returns:
+            StatusData or None: Validated StatusData object or None if inconsistent
+        """
+        try:
+            # BRIDGE: Delegate to shared/index_utils.py for file operations and consistency validation
+            from super_starter_suite.shared.index_utils import load_data_metadata
+
+            logger.debug(f"load_from_file:: Delegating to load_data_metadata() for RAG type '{rag_type}'")
+
+            # Call shared/index_utils.py with filesystem consistency validation
+            metadata_dict = load_data_metadata(user_config, rag_type=rag_type)
+
+            # If None returned, metadata is inconsistent and auto-regeneration failed
+            if metadata_dict is None:
+                logger.warning(f"load_from_file:: Metadata inconsistency detected for RAG type '{rag_type}' - auto-regeneration failed or not possible")
+                return None
+
+            # DATA FORMAT CONVERSION: Convert from index_utils format to StatusData format
+            # shared/index_utils.py returns files as dict (for existing compatibility)
+            # StatusData expects files as list (for frontend consumption)
+
+            # Convert data_files dict to list format
+            files_list = []
+            files_dict = metadata_dict.get('data_files', {})
+
+            if isinstance(files_dict, dict):
+                # Convert dict format {"filename": {"size": X, "modified": Y, "hash": Z}}
+                # to list format [{"name": "filename", "size": X, "modified": Y, "hash": Z}]
+                for filename, file_info in files_dict.items():
+                    if isinstance(file_info, dict):
+                        files_list.append({
+                            "name": filename,
+                            "size": file_info.get("size", 0),
+                            "modified": file_info.get("modified", ""),
+                            "hash": file_info.get("hash", "")
+                        })
+            elif isinstance(files_dict, list):
+                # Already in list format, use as-is
+                files_list = files_dict
+
+            # Convert timestamp strings to datetime objects where appropriate
+            meta_last_update = metadata_dict.get('meta_last_update')
+            if isinstance(meta_last_update, str):
+                try:
+                    meta_last_update = datetime.fromisoformat(meta_last_update)
+                except (ValueError, TypeError):
+                    # Invalid timestamp, will use current time
+                    meta_last_update = datetime.now()
+            elif meta_last_update is None:
+                # No timestamp provided, use current time
+                meta_last_update = datetime.now()
+            # If it's already a datetime object, use it as-is
+
+            # Create StatusData with converted data formats
+            status_data = cls(
+                # Essential data properties
+                data_newest_time=metadata_dict.get('data_newest_time'),
+                data_newest_file=metadata_dict.get('data_newest_file'),
+                total_files=metadata_dict.get('total_files', 0),
+                total_size=metadata_dict.get('total_size', 0),
+                data_files=files_list,  # Converted to list format
+                has_newer_files=metadata_dict.get('has_newer_files', False),
+
+                # Context properties
+                rag_type=metadata_dict.get('rag_type', rag_type),
+                meta_last_update=meta_last_update,
+
+                # Storage properties
+                storage_creation=metadata_dict.get('rag_storage_creation'),
+                storage_files_count=metadata_dict.get('rag_storage_files_count', 0),
+                storage_hash=metadata_dict.get('rag_storage_hash'),
+                storage_status=metadata_dict.get('rag_storage_status', 'empty')
+            )
+
+            # Validate the created StatusData
+            if not status_data.validate():
+                logger.warning(f"load_from_file:: StatusData validation failed after format conversion for RAG type '{rag_type}'")
+                return None
+
+            # Mark as loaded from cache/file
+            status_data._from_cache = True
+            status_data._cache_key = f"{rag_type}_cache"
+            status_data._source = "cache"
+
+            logger.debug(f"load_from_file:: Successfully loaded and converted StatusData for RAG type '{rag_type}' with {len(files_list)} files")
+            return status_data
+
+        except Exception as e:
+            # Log error but don't crash - return None for graceful degradation
+            logger.error(f"load_from_file:: Unexpected error in bridge method for RAG type '{rag_type}': {e}")
+            return None
+
+    def save_to_file(self, user_config) -> bool:
+        """
+        BRIDGE METHOD: Save StatusData by delegating to shared/index_utils.py
+
+        Following architectural guidelines:
+        - shared/index_utils.py: Single responsibility for METADATA file operations
+        - shared/dto.py: Bridge role, data format conversion, NO direct file operations
+        - shared/dto.py: Responsible for data format conversion (List ↔ Dict for files)
+
+        Args:
+            user_config: User's configuration containing RAG paths
+
+        Returns:
+            bool: True if save successful, False otherwise
+        """
+        try:
+            # DATA FORMAT CONVERSION: Convert from StatusData format to index_utils format
+            # StatusData stores files as list (for frontend consumption)
+            # shared/index_utils.py expects files as dict (for existing compatibility)
+
+            # Convert data_files list to dict format for index_utils compatibility
+            files_dict = {}
+            for file_info in self.data_files:
+                if isinstance(file_info, dict) and "name" in file_info:
+                    filename = file_info["name"]
+                    files_dict[filename] = {
+                        "size": file_info.get("size", 0),
+                        "modified": file_info.get("modified", ""),
+                        "hash": file_info.get("hash", "")
+                    }
+
+            # Create data_info dict in the format expected by save_data_metadata()
+            data_info = {
+                "total_files": self.total_files,
+                "total_size": self.total_size,
+                "data_files": [
+                    {
+                        "name": file_info.get("name", ""),
+                        "size": file_info.get("size", 0),
+                        "modified": file_info.get("modified", ""),
+                        "hash": file_info.get("hash", "")
+                    }
+                    for file_info in self.data_files
+                ]
+            }
+
+            # BRIDGE: Delegate to shared/index_utils.py for file operations
+            from super_starter_suite.shared.index_utils import save_data_metadata
+
+            logger.debug(f"save_to_file:: Delegating to save_data_metadata() for RAG type '{self.rag_type}'")
+
+            # Call shared/index_utils.py to handle file operations
+            success = save_data_metadata(
+                user_config=user_config,
+                rag_type=self.rag_type,
+                data_info=data_info
+            )
+
+            if success:
+                # Mark as cached after successful save
+                self._from_cache = True
+                self._cache_key = f"{self.rag_type}_cache"
+                self._source = "cache"
+                logger.debug(f"save_to_file:: Successfully saved StatusData for RAG type '{self.rag_type}'")
+            else:
+                logger.error(f"save_to_file:: Failed to save StatusData for RAG type '{self.rag_type}'")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"save_to_file:: Unexpected error in bridge method for RAG type '{self.rag_type}': {e}")
+            return False
 
 # Global instances for type checking and validation
 PROGRESS_DATA_TEMPLATE = ProgressData()
@@ -228,7 +418,7 @@ def create_progress_data(
 
 def create_status_data(
     rag_type: str = "RAG",
-    data_file_newest: Optional[str] = None,
+    data_newest_time: Optional[str] = None,
     total_files: int = 0,
     total_size: int = 0,
     **kwargs
@@ -240,7 +430,7 @@ def create_status_data(
     """
     data = StatusData(
         rag_type=rag_type,
-        data_file_newest=data_file_newest,
+        data_newest_time=data_newest_time,
         total_files=total_files,
         total_size=total_size,
         **kwargs

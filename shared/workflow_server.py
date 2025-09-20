@@ -21,7 +21,7 @@ class WorkflowEvent:
 from llama_index.core.base.llms.types import MessageRole
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
-server_logger = config_manager.get_logger("server")
+server_logger = config_manager.get_logger("workflow")
 
 
 @dataclass

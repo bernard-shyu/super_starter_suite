@@ -27,11 +27,9 @@ from super_starter_suite.shared.dto import (
     create_status_data
 )
 
-# Import GenerateManager with encapsulated data support
-from super_starter_suite.rag_indexing.generate_manager import (
-    get_generate_manager,
-    reset_generate_manager
-)
+# Import GenerateManager and ProgressTracker for proper instantiation
+from super_starter_suite.rag_indexing.generate_manager import GenerateManager
+from super_starter_suite.rag_indexing.progress_tracker import ProgressTracker
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
 from super_starter_suite.shared.config_manager import config_manager
@@ -46,8 +44,8 @@ from super_starter_suite.rag_indexing.event_system import (
     initialize_event_system
 )
 
-# Get logger for websocket controller
-ws_logger = config_manager.get_logger("gen_ws")
+# Get logger for MVC WebSocket controller
+ws_logger = logging.getLogger("MVC_websocket")
 
 router = APIRouter()
 
@@ -106,22 +104,14 @@ class WebSocketManager:
             for connection in disconnected:
                 self.disconnect(task_id, connection)
 
-    async def broadcast_progress(self, task_id: str, stage: str, percentage: float, message: str = ""):
+    async def broadcast_progress(self, task_id: str, state: str, progress: float, message: str = ""):
         """Broadcast progress update"""
-        # FIX: Map backend stage names to frontend state names
-        state_map = {
-            'ready': 'ST_READY',
-            'parser': 'ST_PARSER',
-            'generation': 'ST_GENERATION',
-            'error': 'ST_ERROR',
-            'completed': 'ST_READY'
-        }
-
-        # FIX: Use 'state' field instead of 'stage', 'progress' instead of 'percentage'
+        # State is already in the correct format (e.g., 'ST_PARSER') from ProgressData.state.value
+        # No additional mapping needed - pass through directly to frontend
         await self.broadcast_to_task(task_id, {
             "type": "progress",
-            "state": state_map.get(stage, stage),  # Map to frontend expected format
-            "progress": percentage,  # Changed from 'percentage' to 'progress'
+            "state": state,
+            "progress": progress,
             "message": message,
             "timestamp": datetime.now().isoformat()
         })
@@ -165,8 +155,20 @@ class GenerateWebSocketController(EventHandler):
     Uses event-driven architecture for clean IPC instead of logger-based communication.
     """
 
-    def __init__(self):
-        self.generate_manager = get_generate_manager()
+    def __init__(self, status_data=None):
+        """
+        Initialize MVC Controller with StatusData.
+
+        Args:
+            status_data: StatusData object (will create fresh if None)
+        """
+        # Create StatusData if not provided (for backward compatibility)
+        if status_data is None:
+            from super_starter_suite.shared.dto import StatusData
+            status_data = StatusData(rag_type="RAG", total_files=0)
+
+        # Create components with StatusData
+        self.generate_manager = GenerateManager(status_data)
         self.task_id = "current_generation"
         self.event_emitter = get_event_emitter()
 
@@ -297,7 +299,9 @@ class GenerateWebSocketController(EventHandler):
 
     def reset_manager(self, total_files: int = 0):
         """Reset the generate manager for a new generation task."""
-        self.generate_manager = reset_generate_manager(total_files)
+        # Reset the existing generate manager instance
+        self.generate_manager.set_total_files(total_files)
+        self.generate_manager.reset(total_files)
 
     async def emit_generation_event(self, event_type: EventType, payload: Dict[str, Any]) -> None:
         """Emit a generation-related event to the event system."""
@@ -447,22 +451,8 @@ class GenerateWebSocketController(EventHandler):
         """Get current generation status from Model."""
         return self.generate_manager.get_current_status()
 
-# Global MVC Controller instance
-_mvc_controller = None
-
-def get_mvc_controller() -> GenerateWebSocketController:
-    """Get or create the global MVC Controller instance."""
-    global _mvc_controller
-    if _mvc_controller is None:
-        _mvc_controller = GenerateWebSocketController()
-    return _mvc_controller
-
-def reset_mvc_controller(total_files: int = 0) -> GenerateWebSocketController:
-    """Reset and return the global MVC Controller instance."""
-    global _mvc_controller
-    _mvc_controller = GenerateWebSocketController()
-    _mvc_controller.reset_manager(total_files)
-    return _mvc_controller
+# Global MVC Controller removed - using session-based GenerateManager for MVC processing
+# No global state dependencies - all MVC through session's GenerateManager
 
 # ============================================================================
 # WEBSOCKET ENDPOINTS
@@ -474,15 +464,18 @@ async def websocket_endpoint(websocket: WebSocket):
     WebSocket endpoint for real-time terminal streaming during RAG generation
 
     Single-client design: Only one generation task runs at a time on this system.
-    Simple route without task_id complexity - serves the current active generation.
+    Task ID is passed via query parameter to ensure proper message routing.
     """
-    from super_starter_suite.shared.config_manager import config_manager
-    ws_logger = config_manager.get_logger("websocket")
+    # Use MVC internal logger
+    ws_logger = logging.getLogger("MVC_websocket")
 
     ws_logger.info("WebSocket connection attempt for generation")
 
-    # For single-client system, use a fixed identifier for the current generation
-    task_id = "current_generation"
+    # Get task_id from query parameter - fallback to default for compatibility
+    query_params = websocket.query_params
+    task_id = query_params.get('task_id', 'current_generation')
+
+    ws_logger.info(f"WebSocket connection for task_id: {task_id}")
 
     # Attempt to connect
     connected = await websocket_manager.connect(task_id, websocket)
@@ -661,7 +654,5 @@ __all__ = [
     "get_task_connection_count",
     "get_websocket_stats",
     "cleanup_task_connections",
-    "GenerateWebSocketController",
-    "get_mvc_controller",
-    "reset_mvc_controller"
+    "GenerateWebSocketController"
 ]

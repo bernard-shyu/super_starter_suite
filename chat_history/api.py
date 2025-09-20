@@ -13,7 +13,7 @@ from super_starter_suite.chat_history.chat_history_manager import ChatHistoryMan
 from super_starter_suite.shared.dto import ChatSession, ChatMessageDTO, MessageRole, create_chat_message
 
 # Get logger for chat history API
-chat_logger = config_manager.get_logger("chat_history_api")
+chat_logger = config_manager.get_logger("history")
 
 # Create router
 router = APIRouter()

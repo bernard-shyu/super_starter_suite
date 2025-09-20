@@ -48,7 +48,7 @@ class ChatHistoryManager:
             user_config: UserConfig instance containing chat history settings
         """
         self.user_config = user_config
-        self.logger = config_manager.get_logger("chat_history")
+        self.logger = config_manager.get_logger("history")
 
         # Get chat history configuration
         if not self.user_config.chat_history_config:

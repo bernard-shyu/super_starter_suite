@@ -126,7 +126,7 @@ class EventEmitter:
 
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.logger = config_manager.get_logger("event_system")
+        self.logger = config_manager.get_logger("gen_event")
 
         # Thread-safe storage for event handlers
         self._handlers: Dict[EventType, Set[EventHandler]] = {}
@@ -151,7 +151,7 @@ class EventEmitter:
 
         self._is_running = True
         self._processing_task = asyncio.create_task(self._process_events())
-        self.logger.info("EventEmitter started - processing events asynchronously")
+        self.logger.debug("EventEmitter started - processing events asynchronously")
 
         # Emit system ready event
         await self.emit(EventType.SYSTEM_READY, {}, "event_system")

@@ -8,6 +8,7 @@ RAG_TYPES = [ "RAG", "CODE_GEN", "FINANCE", "TINA_DOC" ] # Moved from system_con
 [GENERATE]
 # User selects the method for parsing documents and creating an index.
 METHOD = "NvidiaAI" # Options: EasyOCR, LlamaParse, NvidiaAI, GeminiAI
+SCAN_DEPTH = "balanced" # Options: full, balanced, fast, minimal - Controls filesystem scanning performance vs accuracy
 
 [CHATBOT_AI_MODEL]
 # User's personal choice for the main chatbot LLM.

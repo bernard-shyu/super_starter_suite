@@ -25,8 +25,11 @@ from super_starter_suite.shared.dto import (
 from super_starter_suite.shared.config_manager import config_manager
 
 # Get logger for progress tracker (pure logging only)
-logger = config_manager.get_logger("progress_tracker")
+logger = config_manager.get_logger("gen_prog")
 
+# DEBUG: Verify logger configuration
+logger.info(f"🔧 PROGRESS TRACKER LOGGER INITIALIZED: name={logger.name}, level={logger.level}, effective_level={logger.getEffectiveLevel()}")
+# logger.debug("🔧 DEBUG TEST: Progress tracker logger debug message")
 
 class ProgressTracker:
     """
@@ -38,21 +41,32 @@ class ProgressTracker:
     - Ignore all other logger output for clean separation of concerns
     """
 
-    def __init__(self):
+    def __init__(self, status_data=None):
+        """
+        Initialize ProgressTracker with optional StatusData injection.
+
+        Args:
+            status_data: StatusData object for accessing total_files
+        """
+        self.status_data = status_data
         self.reset()
 
-    def reset(self, total_files: int = 0):
+    def reset(self):
         """Reset progress tracking state."""
         self.state = 'ST_READY'
         self.progress = 0
         self.processed_files = 0
-        self.total_files = total_files
         self.current_stage = None
         self.parser_stage = 'idle'
         self.generation_stage = 'idle'
         self.last_raw_message = ""
 
-        logger.debug(f"ProgressTracker reset: total_files={total_files}")
+        # Hierarchical progress tracking (file + page level)
+        self.current_file_pages = 0
+        self.current_file_processed_pages = 0
+        self.current_filename = ""  # Track current file being processed
+        self.files_processed = set()  # Track unique files to avoid double-counting
+        self.page_processing_started = False  # Track when page processing begins for current file
 
     def parse_rag_output(self, raw_line: str, task_id: Optional[str] = None, rag_type: str = "RAG") -> Optional[ProgressData]:
         """
@@ -114,9 +128,8 @@ class ProgressTracker:
     def _is_progress_pattern(self, line: str) -> bool:
         """Check if line contains GEN_OCR:PROGRESS patterns for progress tracking."""
         progress_patterns = [
-            r'GEN_OCR:PROGRESS:\s+(EasyOCRReader|LlamaParseReader|AI-Parser|Google AIVision)\s+process\s+file',
-            r'GEN_OCR:PROGRESS:\s+Processed page',
-            r'GEN_OCR:PROGRESS:\s+AI-Parser finished PDF file process'
+            r'GEN_OCR:PROGRESS:\s+(EasyOCRReader|LlamaParseReader|AI-Parser)\s+process\s+file',
+            r'GEN_OCR:PROGRESS:\s+Processed page'
         ]
 
         for pattern in progress_patterns:
@@ -143,13 +156,45 @@ class ProgressTracker:
 
     def _handle_progress_pattern(self, line: str, task_id: Optional[str] = None, rag_type: str = "RAG") -> ProgressData:
         """Handle GEN_OCR:PROGRESS patterns for progress tracking."""
-        # Track file-based progress
-        if 'process file' in line:
-            self.processed_files += 1
+        logger.debug(f"📄 HANDLING PROGRESS PATTERN: '{line.strip()}'")
 
-        # Calculate progress and create response
-        progress = self._calculate_parser_progress()
-        message = self._get_parser_progress_message()
+        # Extract filename for tracking unique files (avoid double-counting)
+        filename_match = re.search(r'process file:\s*\(([^)]+)\)', line)
+        if filename_match:
+            filename = filename_match.group(1).strip()
+            logger.debug(f"📄 FILE MATCH: '{filename}' (already processed: {filename in self.files_processed})")
+            if filename not in self.files_processed:
+                self.files_processed.add(filename)
+                self.processed_files += 1
+                logger.info(f"📄 NEW FILE PROCESSED: {filename}, total processed: {self.processed_files}/{self.get_total_files()}")
+            else:
+                logger.debug(f"📄 FILE ALREADY PROCESSED: {filename} (skipping duplicate)")
+
+        # Handle PDF page information and document type detection
+        if 'Document Type:' in line and 'Pages:' in line:
+            # Extract page count from "Document Type: <class 'pymupdf.Document'>  Pages: 33"
+            pages_match = re.search(r'Pages:\s*(\d+)', line)
+            if pages_match:
+                # CRITICAL FIX: Reset ALL page tracking state when detecting new file
+                self.current_file_pages = int(pages_match.group(1))
+                self.current_file_processed_pages = 0  # Reset page counter
+                self.page_processing_started = False  # Reset processing flag
+                logger.info(f"📄 PDF DETECTED: {self.current_file_pages} pages - RESET page tracking")
+
+        # Handle individual page processing
+        if 'Processed page' in line:
+            if not self.page_processing_started:
+                self.page_processing_started = True
+                logger.debug("📄 PAGE PROCESSING STARTED for current file")
+            self.current_file_processed_pages += 1
+            logger.debug(f"📄 PAGE PROCESSED: {self.current_file_processed_pages}/{self.current_file_pages}")
+
+        # CRITICAL FIX: Use hierarchical page-based progress calculation for accurate tracking
+        # This provides fine-grained progress within multi-page files instead of file-based only
+        progress = self._calculate_page_based_progress()
+        message = self._get_page_based_progress_message()
+
+        logger.info(f"📊 PROGRESS UPDATE: {progress:.1f}% ({self.processed_files}/{self.get_total_files()} files) - '{message}'")
 
         return create_progress_data(
             state=GenerationState.PARSER,
@@ -159,8 +204,10 @@ class ProgressTracker:
             rag_type=rag_type,
             metadata={
                 'stage': 'file_processing',
-                'processed_files': self.processed_files,
-                'total_files': self.total_files
+                'processed_files': len(self.files_processed),
+                'total_files': self.get_total_files(),
+                'current_file_pages': self.current_file_pages,
+                'current_file_processed_pages': self.current_file_processed_pages
             }
         )
 
@@ -267,18 +314,105 @@ class ProgressTracker:
 
         return None
 
+    def get_total_files(self) -> int:
+        """Get total files from StatusData (single source of truth)."""
+        if self.status_data is None:
+            logger.warning(f"StatusData not available, using fallback total_files=0")
+            return 0
+        total_files = self.status_data.total_files
+        logger.debug(f"Retrieved total_files={total_files} from StatusData")
+        return total_files
+
     def _calculate_parser_progress(self) -> float:
         """Calculate parser progress based on processed files."""
-        if self.total_files == 0:
+        total_files = self.get_total_files()
+
+        if total_files == 0:
+            logger.debug(f"No total_files in StatusData, using fallback: processed_files={self.processed_files}, arbitrary progress={min(self.processed_files * 10, 100)}%")
             return min(self.processed_files * 10, 100)  # Arbitrary progress if total unknown
-        return min((self.processed_files / self.total_files) * 100, 100)
+
+        progress = min((self.processed_files / total_files) * 100, 100)
+        logger.debug(f"Parser progress calculation: processed_files={self.processed_files}, total_files={total_files}, progress={progress:.1f}%")
+        return progress
 
     def _get_parser_progress_message(self) -> str:
         """Get appropriate parser progress message."""
-        if self.total_files > 0:
-            return f'Processing file {self.processed_files}/{self.total_files}'
+        if self.get_total_files() > 0:
+            return f'Processing file {self.processed_files}/{self.get_total_files()}'
         else:
             return f'Processing file {self.processed_files}'
+
+    def _calculate_page_based_progress(self) -> float:
+        """
+        Calculate hierarchical file + page progress for accurate tracking.
+
+        This method implements a two-level progress calculation:
+        1. FILE LEVEL: Base progress from completed files (e.g., 14/17 files = 82.35%)
+        2. PAGE LEVEL: Fine-grained progress within current file (e.g., 29/132 pages = 21.97%)
+
+        FINAL PROGRESS = file_progress + (page_progress / total_files)
+
+        EXAMPLE: 17 files, processing file 15 (132 pages), on page 29
+        - Completed files: (14/17) * 100 = 82.35%
+        - Current file pages: (29/132) * 100 = 21.97%
+        - Current file contribution: 21.97% / 17 = 1.29%
+        - TOTAL: 82.35% + 1.29% = 83.64%
+
+        This prevents progress drops and provides smooth, accurate tracking.
+        """
+        if self.current_file_pages == 0:
+            # Fall back to file-based progress if no page info available
+            return self._calculate_parser_progress()
+
+        # CRITICAL FIX: If page processing hasn't started yet, don't switch to page-based calculation
+        # This prevents progress from dropping to 0 when we first detect PDF page information
+        if not self.page_processing_started:
+            # We're processing files but haven't started pages yet - stick with file-based progress
+            file_progress = self._calculate_parser_progress()
+            logger.debug(f"Page processing not started yet, using file-based progress: {file_progress}%")
+            return min(file_progress, 95)  # Cap at 95% until page processing starts
+
+        # CORRECTED: Use hierarchical file + page calculation instead of cumulative page calculation
+        # This prevents the bug where page counts accumulate across all files
+        if self.get_total_files() == 0:
+            return 0
+
+        # Base progress from completed files (files 1 to N-1)
+        completed_files_progress = ((self.processed_files - 1) / self.get_total_files()) * 100
+        completed_files_progress = max(0, completed_files_progress)  # Ensure non-negative
+
+        # Current file contribution based on page progress within that file
+        if self.current_file_pages > 0 and self.page_processing_started:
+            # Current file page progress as fraction of one file's worth
+            current_file_page_progress = (self.current_file_processed_pages / self.current_file_pages)
+            current_file_contribution = (current_file_page_progress / self.get_total_files()) * 100
+
+            total_progress = completed_files_progress + current_file_contribution
+            logger.debug(f"Hierarchical progress: completed_files={completed_files_progress:.1f}%, "
+                        f"current_file={current_file_contribution:.1f}%, "
+                        f"total={total_progress:.1f}% "
+                        f"(file {self.processed_files}/{self.get_total_files()}, "
+                        f"page {self.current_file_processed_pages}/{self.current_file_pages})")
+        else:
+            # No page info yet, fall back to pure file-based progress
+            total_progress = (self.processed_files / self.get_total_files()) * 100
+            logger.debug(f"File-based progress: {total_progress:.1f}% "
+                        f"(file {self.processed_files}/{self.get_total_files()})")
+
+        return min(total_progress, 100)
+
+    def _get_page_based_progress_message(self) -> str:
+        """Get page-based progress message (more accurate for PDFs)."""
+        if self.current_file_pages == 0:
+            # Fall back to file-based message if no page info available
+            return self._get_parser_progress_message()
+
+        if self.current_file_pages > 0 and self.current_file_processed_pages > 0:
+            # Show page-based progress when we have page information
+            return f'Processing page {self.current_file_processed_pages}/{self.current_file_pages} - file {self.processed_files}/{self.get_total_files()}'
+        else:
+            # Show file-based progress until page processing starts
+            return self._get_parser_progress_message()
 
     def get_current_status(self) -> Dict[str, Any]:
         """Get current status for debugging/logging."""
@@ -286,31 +420,18 @@ class ProgressTracker:
             'state': self.state,
             'progress': self.progress,
             'processed_files': self.processed_files,
-            'total_files': self.total_files,
+            'total_files': self.get_total_files(),  # Use StatusData
             'parser_stage': self.parser_stage,
             'generation_stage': self.generation_stage,
-            'last_message': self.last_raw_message
+            'last_message': self.last_raw_message,
+            # Hierarchical progress tracking information
+            'current_file_pages': self.current_file_pages,
+            'current_file_processed_pages': self.current_file_processed_pages,
+            'files_processed_count': len(self.files_processed),
+            'files_processed_list': list(self.files_processed),
+            'page_processing_started': self.page_processing_started
         }
 
-    def set_total_files(self, total_files: int):
-        """Update the total number of files to process."""
-        self.total_files = total_files
-        logger.debug(f"Total files updated to: {total_files}")
 
-
-# Global instance for backward compatibility
-_progress_tracker = None
-
-def get_progress_tracker() -> ProgressTracker:
-    """Get global progress tracker instance"""
-    global _progress_tracker
-    if _progress_tracker is None:
-        _progress_tracker = ProgressTracker()
-    return _progress_tracker
-
-def reset_progress_tracker(total_files: int = 0) -> ProgressTracker:
-    """Reset and return the global progress tracker instance"""
-    global _progress_tracker
-    _progress_tracker = ProgressTracker()
-    _progress_tracker.total_files = total_files
-    return _progress_tracker
+# Global singletons removed - use session-based architecture instead
+# All progress tracking should be done through RAGGenerationSession

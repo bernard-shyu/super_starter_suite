@@ -30,17 +30,6 @@ _event_emitter = initialize_event_system(config_manager)
 # Get logger for main application
 main_logger = config_manager.get_logger("main")
 
-# Import metadata management functions
-from super_starter_suite.shared.index_utils import (
-    scan_data_directory,
-    scan_storage_directory,
-    save_data_metadata,
-    load_data_metadata,
-    compare_data_with_metadata,
-    get_data_status_simple,
-    get_rag_status_summary
-)
-
 # Import workflow routers
 from super_starter_suite.workflow_adapters.agentic_rag import router as agentic_rag_adapter_router
 from super_starter_suite.workflow_adapters.code_generator import router as code_generator_adapter_router
@@ -134,7 +123,7 @@ async def associate_user(request: Request, user_data: Dict[str, str]):
 @app.get("/api/settings")
 async def get_settings(request: Request):
     user_id = request.state.user_id
-    return config_manager.load_user_settings(user_id)
+    return config_manager.get_merged_config(user_id)
 
 @bind_user_context
 @app.post("/api/settings")

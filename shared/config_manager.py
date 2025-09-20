@@ -5,7 +5,6 @@ from typing import Dict, Any, Optional
 from fastapi import HTTPException, Request
 import logging
 from pathlib import Path
-from super_starter_suite.shared.dto import ChatHistoryConfig
 
 # UNIFIED LOGGING SYSTEM - Use config_manager after it's instantiated
 # We'll use a placeholder logger for now and replace it after config_manager is created
@@ -290,7 +289,20 @@ class ConfigManager:
             if colors_enabled and self._supports_color():
                 # Set up colorful formatter for console output
                 console_handler = logging.StreamHandler()
-                console_handler.setLevel(log_level)
+
+                # PROBLEM: Global logging level (INFO) filters out component DEBUG messages
+                # SOLUTION: If any component needs DEBUG level, set console handler to DEBUG too
+                # This allows component-specific DEBUG messages (like gen_prog) to be displayed
+                component_levels = logging_config.get('COMPONENT_LEVELS', {})
+                min_component_level = min(component_levels.values()) if component_levels else log_level
+
+                if min_component_level < log_level:
+                    # At least one component needs more verbose logging than global level
+                    console_handler.setLevel(min_component_level)
+                    temp_logger.debug(f"Console handler set to level {min_component_level} to support component-specific DEBUG logging")
+                else:
+                    # Use global logging level
+                    console_handler.setLevel(log_level)
 
                 # Simple ANSI color formatter
                 color_scheme = logging_config.get('COLOR_SCHEME', 'uvicorn')
@@ -302,7 +314,7 @@ class ConfigManager:
                 if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
                     root_logger.addHandler(console_handler)
 
-            temp_logger.info(f"Logging configured - Level: {log_level}, Components: {components}, Component Levels: {component_levels}, Colors: {colors_enabled}")
+            temp_logger.debug(f"Logging configured - Level: {log_level}, Components: {components}, Component Levels: {component_levels}, Colors: {colors_enabled}")
 
         except Exception as e:
             temp_logger.error(f"Failed to configure logging: {e}")
@@ -402,10 +414,14 @@ class UserRAGIndex:
 
         self.set_rag_type(rag_type)
 
+    def get_path(self, rag_type: str):
+        data_path    = os.path.join(self.rag_root, f"data.{rag_type}")
+        storage_path = os.path.join(self.rag_root, f"storage.{rag_type}", self.storage_suffix)
+        return data_path, storage_path
+
     def set_rag_type(self, rag_type: str):
-        self.rag_type     = rag_type
-        self.data_path    = os.path.join(self.rag_root, f"data.{rag_type}")
-        self.storage_path = os.path.join(self.rag_root, f"storage.{rag_type}", self.storage_suffix)
+        self.rag_type = rag_type
+        self.data_path, self.storage_path = self.get_path(rag_type)
 
     def sanity_check(self):
         # Perform sanity checks specific to RAG workflows
@@ -467,6 +483,7 @@ class UserConfig:
         )
 
         # Load chat history configuration
+        from super_starter_suite.shared.dto import ChatHistoryConfig
         chat_history_settings = self.get_user_setting("CHAT_HISTORY", {})
         self.chat_history_config = ChatHistoryConfig.from_dict(chat_history_settings)
 
