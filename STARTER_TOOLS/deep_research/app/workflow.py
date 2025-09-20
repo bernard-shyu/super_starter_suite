@@ -3,7 +3,11 @@ import os
 import uuid
 from typing import List, Literal, Optional
 
-from app.index import get_index
+try:
+    from app.index import get_index
+except ImportError:
+    from super_starter_suite.shared.index_utils import get_index
+
 from llama_index.core.base.llms.types import (
     CompletionResponse,
     CompletionResponseAsyncGen,
@@ -50,7 +54,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
 
     return DeepResearchWorkflow(
         index=index,
-        timeout=120.0,
+        timeout=400.0,    # default: 120 seconds
     )
 
 
@@ -374,7 +378,8 @@ class DeepResearchWorkflow(Workflow):
         res = await write_report(
             memory=self.memory,
             user_request=self.user_request,
-            stream=self.stream,
+            #stream=self.stream,
+            stream=False, # Force non-streaming to avoid the bug in AzureInference LLM when streaming
         )
 
         final_response = await write_response_to_stream(res, ctx)

@@ -1,6 +1,10 @@
 from typing import Optional
 
-from app.index import get_index
+try:
+    from app.index import get_index
+except ImportError:
+    from super_starter_suite.shared.index_utils import get_index
+
 from llama_index.core.agent.workflow import AgentWorkflow
 from llama_index.core.settings import Settings
 from llama_index.server.api.models import ChatRequest
@@ -25,8 +29,12 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> AgentWorkflow
     system_prompt = """You are a helpful assistant"""
     system_prompt += CITATION_SYSTEM_PROMPT
 
-    return AgentWorkflow.from_tools_or_functions(
+    # print(f"[DEBUG] About to create AgentWorkflow with Settings.llm: {Settings.llm}")
+    workflow = AgentWorkflow.from_tools_or_functions(
         tools_or_functions=[query_tool],
         llm=Settings.llm,
         system_prompt=system_prompt,
+        timeout=60.0  # Reduced from 300s to 60s for faster feedback
     )
+    # print(f"[DEBUG] AgentWorkflow created: {workflow}")
+    return workflow

@@ -1,7 +1,11 @@
 import os
 from typing import List, Optional
 
-from app.index import get_index
+try:
+    from app.index import get_index
+except ImportError:
+    from super_starter_suite.shared.index_utils import get_index
+
 from llama_index.core import Settings
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.llms.function_calling import FunctionCallingLLM
@@ -47,7 +51,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
         query_engine_tool=query_engine_tool,
         code_interpreter_tool=code_interpreter_tool,
         document_generator_tool=document_generator_tool,
-        timeout=180,
+        timeout=300.0     # default: 180 seconds
     )
 
 

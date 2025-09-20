@@ -3,6 +3,7 @@ import time
 from typing import Any, Literal, Optional
 
 from llama_index.core.chat_engine.types import ChatMessage
+from llama_index.core.settings import Settings
 from llama_index.core.llms import LLM
 from llama_index.llms.openai import OpenAI
 from llama_index.core.memory import ChatMemoryBuffer
@@ -25,13 +26,16 @@ from llama_index.server.api.models import (
 )
 from llama_index.server.api.utils import get_last_artifact
 from pydantic import BaseModel, Field
-
+try:
+    from common.LLamaIndex_helper import load_llm
+except ImportError:
+    from shared.llama_utils import load_llm
 
 def create_workflow(chat_request: ChatRequest) -> Workflow:
     workflow = DocumentArtifactWorkflow(
-        llm=OpenAI(model="gpt-4.1"),
+        llm=Settings.llm,  # llm=OpenAI(model="gpt-4.1"),
         chat_request=chat_request,
-        timeout=120.0,
+        timeout=240.0     # default: 120 seconds
     )
     return workflow
 

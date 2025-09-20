@@ -2,7 +2,10 @@ import platform
 import subprocess
 from typing import Any
 
-from app.events import CLICommand, CLIHumanInputEvent, CLIHumanResponseEvent
+try:
+    from app.events import CLICommand, CLIHumanInputEvent, CLIHumanResponseEvent
+except ImportError:
+    from super_starter_suite.STARTER_TOOLS.human_in_the_loop.app.events import CLICommand, CLIHumanInputEvent, CLIHumanResponseEvent
 
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.settings import Settings
