@@ -1,13 +1,14 @@
 # User-specific settings for Bernard
 
 [USER_PREFERENCES]
-THEME = "dark_classic"
+THEME = "green_classic" # Default theme
 USER_RAG_ROOT = "/home/bernard/workspace/prajna_AI/prajna-stadium/llama_index/BERNARD_SPACE/Super-RAG.Bernard"  # Absolute path to this user's RAG data
-RAG_TYPES = [ "RAG", "CODE_GEN", "FINANCE", "TINA_DOC" ] # Moved from system_config.toml
+RAG_TYPES = [ "RAG", "CODE_GEN_LangChain", "CODE_GEN_llama_index", "CODE_GEN_test1", "FINANCE" ] # Moved from system_config.toml
 
 [GENERATE]
 # User selects the method for parsing documents and creating an index.
-METHOD = "LlamaParse" # Options: EasyOCR, LlamaParse, NvidiaAI, GeminiAI
+METHOD = "NvidiaAI" # Options: EasyOCR, LlamaParse, NvidiaAI, GeminiAI
+SCAN_DEPTH = "balanced" # Options: full, balanced, fast, minimal - Controls filesystem scanning performance vs accuracy
 
 [CHATBOT_AI_MODEL]
 # User's personal choice for the main chatbot LLM.
@@ -20,9 +21,47 @@ PARAMS = { temperature = 0.7, top_k = 40 }
 # Determines the data/storage sub-folders relative to the USER_RAG_ROOT above.
 # DATA = "data.{RAG_TYPE}"
 # STORAGE = "storage.{RAG_TYPE}"
-agentic_rag = "CODE_GEN"
-code_generator = "CODE_GEN"
-deep_research  = "CODE_GEN"
+agentic_rag = "CODE_GEN_llama_index"
+code_generator = "CODE_GEN_test1"
+deep_research  = "CODE_GEN_LangChain"
 document_generator = "RAG"
 financial_report = "FINANCE"
 human_in_the_loop = "RAG"
+
+[CHAT_HISTORY]
+# Chat history management and session persistence settings
+
+# Storage Configuration
+ENABLED = true
+STORAGE_PATH = "chat_history"  # Relative to USER_RAG_ROOT
+MAX_SESSIONS = 1000  # Maximum number of chat sessions to store
+MAX_MESSAGES_PER_SESSION = 100  # Maximum messages per session
+
+# Session Management
+AUTO_SAVE = true  # Automatically save chat sessions
+SAVE_INTERVAL = 30  # Seconds between auto-saves
+SESSION_TIMEOUT = 3600  # Seconds before idle session expires (1 hour)
+COMPRESS_OLD_SESSIONS = true  # Compress sessions older than 30 days
+
+# Memory Buffer Settings (for LlamaIndex ChatMemoryBuffer)
+MEMORY_BUFFER_SIZE = 2000  # Maximum tokens to keep in memory
+MEMORY_BUFFER_TOKEN_LIMIT = 2000  # Token limit for memory buffer
+
+# UI Preferences
+SHOW_TIMESTAMPS = true  # Show message timestamps
+SHOW_MESSAGE_STATUS = true  # Show message delivery status
+ENABLE_MESSAGE_ACTIONS = true  # Enable copy/share message actions
+ENABLE_TYPING_INDICATOR = true  # Show typing indicators
+AUTO_SCROLL = true  # Auto-scroll to new messages
+SHOW_CHARACTER_COUNTER = true  # Show input character counter
+
+# Export & Backup
+EXPORT_FORMAT = "json"  # Default export format: json, txt, html
+BACKUP_ENABLED = true  # Enable automatic backups
+BACKUP_INTERVAL = 86400  # Backup interval in seconds (24 hours)
+BACKUP_RETENTION = 30  # Days to keep backups
+
+# Privacy & Security
+ENCRYPT_SESSIONS = false  # Encrypt stored chat sessions
+LOG_CHAT_ACTIVITY = false  # Log chat activity for analytics
+ALLOW_DATA_COLLECTION = false  # Allow anonymous usage data collection
