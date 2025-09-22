@@ -4,7 +4,7 @@
 
 ## 🎯 **Project Overview**
 
-`super_starter_suite` is an innovative, multi-user FastAPI server designed to centralize and streamline the deployment of LlamaIndex RAG (Retrieval-Augmented Generation) applications. It consolidates six distinct RAG workflows into a single, cohesive web platform, offering shared infrastructure, robust user isolation, and a modern, responsive user experience. This project aims to provide a scalable and extensible foundation for AI-powered document intelligence, making advanced RAG capabilities accessible and manageable for diverse user groups and development teams.
+`super_starter_suite` is an innovative, multi-user FastAPI server designed to centralize and streamline the deployment of LlamaIndex RAG (Retrieval-Augmented Generation) applications. It consolidates six distinct RAG workflows into a single, cohesive web platform, offering shared infrastructure, robust user isolation, and a modern, responsive user experience. This project, notably developed through **vibe-coding with VS-Code/CLINE**, aims to provide a scalable and extensible foundation for AI-powered document intelligence, making advanced RAG capabilities accessible and manageable for diverse user groups and development teams.
 
 ---
 

@@ -204,7 +204,7 @@ class StatusData:
         }
 
     @classmethod
-    def load_from_file(cls, user_config, rag_type: str) -> Optional['StatusData']:
+    def load_from_file(cls, user_config, rag_type: str) -> 'StatusData': # Changed return type to always be StatusData
         """
         BRIDGE METHOD: Load StatusData by delegating to shared/index_utils.py
 
@@ -218,8 +218,10 @@ class StatusData:
             rag_type: The RAG type to load metadata for
 
         Returns:
-            StatusData or None: Validated StatusData object or None if inconsistent
+            StatusData: Validated StatusData object. Returns an empty StatusData
+                        if loading fails or data is inconsistent.
         """
+        metadata_dict: Optional[Dict[str, Any]] = None
         try:
             # BRIDGE: Delegate to shared/index_utils.py for file operations and consistency validation
             from super_starter_suite.shared.index_utils import load_data_metadata
@@ -231,8 +233,9 @@ class StatusData:
 
             # If None returned, metadata is inconsistent and auto-regeneration failed
             if metadata_dict is None:
-                logger.warning(f"load_from_file:: Metadata inconsistency detected for RAG type '{rag_type}' - auto-regeneration failed or not possible")
-                return None
+                logger.warning(f"load_from_file:: Metadata inconsistency detected for RAG type '{rag_type}' - auto-regeneration failed or not possible. Returning empty StatusData.")
+                # Fallback to an empty StatusData instance
+                return cls(rag_type=rag_type, meta_last_update=datetime.now(), storage_status="empty")
 
             # DATA FORMAT CONVERSION: Convert from index_utils format to StatusData format
             # shared/index_utils.py returns files as dict (for existing compatibility)
@@ -293,8 +296,9 @@ class StatusData:
 
             # Validate the created StatusData
             if not status_data.validate():
-                logger.warning(f"load_from_file:: StatusData validation failed after format conversion for RAG type '{rag_type}'")
-                return None
+                logger.warning(f"load_from_file:: StatusData validation failed after format conversion for RAG type '{rag_type}'. Returning empty StatusData.")
+                # Fallback to an empty StatusData instance
+                return cls(rag_type=rag_type, meta_last_update=datetime.now(), storage_status="empty")
 
             # Mark as loaded from cache/file
             status_data._from_cache = True
@@ -305,9 +309,9 @@ class StatusData:
             return status_data
 
         except Exception as e:
-            # Log error but don't crash - return None for graceful degradation
-            logger.error(f"load_from_file:: Unexpected error in bridge method for RAG type '{rag_type}': {e}")
-            return None
+            # Log error but don't crash - return an empty StatusData for graceful degradation
+            logger.error(f"load_from_file:: Unexpected error in bridge method for RAG type '{rag_type}': {e}. Returning empty StatusData.")
+            return cls(rag_type=rag_type, meta_last_update=datetime.now(), storage_status="empty")
 
     def save_to_file(self, user_config) -> bool:
         """

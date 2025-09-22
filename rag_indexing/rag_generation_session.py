@@ -349,14 +349,9 @@ class RAGGenerationSession:
             session_logger.debug(f"Lazy loading StatusData for RAG type: {rag_type}")
 
             # Load StatusData directly from metadata file using shared/index_utils.py
-            status_data = StatusData.load_from_file(self.user_config, rag_type)
-
-            # If no cached StatusData, our improved functions should handle it
-            # The load_data_metadata() in shared/index_utils.py will auto-regenerate if needed
-            if status_data is None:
-                session_logger.warning(f"Failed to load StatusData for {rag_type} - this should not happen with improved functions")
-                # Don't cache None values to maintain type safety
-                return
+            # StatusData.load_from_file is now guaranteed to return a StatusData instance,
+            # so no None check is needed here.
+            status_data: StatusData = StatusData.load_from_file(self.user_config, rag_type)
 
             # Cache the StatusData instance
             self._status_data_cache[rag_type] = status_data

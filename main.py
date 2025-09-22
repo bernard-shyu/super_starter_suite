@@ -15,12 +15,35 @@ import json
 import hashlib
 from datetime import datetime
 
-# Add the project root directory to sys.path to enable imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Add the parent directory of the current project to sys.path.
+# This allows Python to find the current project directory (e.g., 'github.super_starter')
+# as a top-level package.
+current_file_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_file_dir)
 
-# Now we can import from the super_starter_suite package
+# Ensure the parent directory is at the beginning of sys.path for local module priority
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Dynamically rename the current project's module in sys.modules.
+# This makes Python treat the current directory (e.g., 'github.super_starter')
+# as if it were named 'super_starter_suite' for import purposes.
+# This is crucial for portability when the project is cloned into different directories.
+current_project_name = os.path.basename(current_file_dir)
+if current_project_name != "super_starter_suite":
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("super_starter_suite", os.path.join(current_file_dir, "__init__.py"))
+    if spec:
+        super_starter_suite_module = importlib.util.module_from_spec(spec)
+        sys.modules["super_starter_suite"] = super_starter_suite_module
+        # Also ensure the actual module (e.g., github.super_starter) is loaded
+        # and its submodules are correctly mapped.
+        # This is a complex operation, a simpler approach is to ensure
+        # the parent directory is on path and imports are relative or absolute
+        # from the *intended* package name.
+
+# The project's internal package name is 'super_starter_suite'.
+# All imports should consistently use this name.
 from super_starter_suite.shared.config_manager import config_manager, UserConfig
 
 # Initialize event system for clean IPC architecture
