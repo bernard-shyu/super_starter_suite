@@ -153,7 +153,7 @@ async def get_settings(request: Request):
 async def update_settings(request: Request, settings_data: Dict[str, Any]):
     user_id = request.state.user_id
     config_manager.save_user_settings(user_id, settings_data)
-    # Reload config for current request state
+    # Reload config for current request state to ensure middleware uses updated settings
     request.state.user_config = config_manager.get_user_config(user_id)
     return {"message": "Settings updated successfully"}
 
@@ -185,6 +185,7 @@ async def get_user_state(request: Request):
     # Get current workflow from user state (this would need to be stored somewhere)
     # For now, return default or empty
     current_workflow = user_config.get_user_setting("USER_PREFERENCES", {}).get("current_workflow", "")
+    main_logger.debug(f"get_user_state:: USER={user_config.user_id}  WORKFLOW={current_workflow}  MODEL_PROVIDER={model_provider}  MODEL_ID={model_id}")
 
     return {
         "current_workflow": current_workflow,
@@ -278,21 +279,58 @@ async def update_current_theme(request: Request, theme_data: Dict[str, str]):
         raise HTTPException(status_code=400, detail=str(e))
 
 # --- Chat History API Endpoints ---
-# Import and include chat history router
+# Import and include chat history data CRUD endpoints
 try:
-    from super_starter_suite.chat_history import router as chat_history_router
-    main_logger.debug("[STARTUP] Chat history router imported successfully")
+    from super_starter_suite.chat_history.data_crud_endpoint import router as data_crud_router
+    main_logger.debug("[STARTUP] Chat history data CRUD router imported successfully")
 except Exception as e:
-    main_logger.warning(f"[STARTUP] ERROR: Failed to import chat history router: {e}")
+    main_logger.warning(f"[STARTUP] ERROR: Failed to import chat history data CRUD router: {e}")
     import traceback
     traceback.print_exc()
-    chat_history_router = None
+    data_crud_router = None
 
-if chat_history_router is not None:
-    app.include_router(chat_history_router, prefix="/api", tags=["Chat History"])
-    main_logger.debug("[STARTUP] Chat history router included successfully")
+if data_crud_router is not None:
+    app.include_router(data_crud_router, prefix="/api", tags=["Chat History Data"])
+    main_logger.debug("[STARTUP] Chat history data CRUD router included successfully")
 else:
-    main_logger.warning("[STARTUP] WARNING: Chat history router not available - skipping inclusion")
+    main_logger.warning("[STARTUP] WARNING: Chat history data CRUD router not available - skipping inclusion")
+
+# --- Session Management Imports ---
+from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
+
+# Session lifecycle management endpoint
+@bind_user_context
+@app.get("/api/workflow_sessions/{workflow}/id")
+async def get_workflow_session_id(request: Request, workflow: str):
+    """Get or create a persistent session ID for a workflow."""
+    user_config = request.state.user_config
+    user_id = request.state.user_id
+
+    try:
+        chat_manager = ChatHistoryManager(user_config)
+        session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
+        session_id = session_lifecycle.get_or_create_workflow_session(workflow)
+
+        return {"session_id": session_id}
+    except Exception as e:
+        main_logger.error(f"Error getting session ID for workflow {workflow}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session ID")
+
+# Import and include chat executor endpoints
+try:
+    from super_starter_suite.chat_history.executor_endpoint import router as executor_router
+    main_logger.debug("[STARTUP] Chat executor router imported successfully")
+except Exception as e:
+    main_logger.warning(f"[STARTUP] ERROR: Failed to import chat executor router: {e}")
+    import traceback
+    traceback.print_exc()
+    executor_router = None
+
+if executor_router is not None:
+    app.include_router(executor_router, prefix="/api", tags=["Chat Executor"])
+    main_logger.debug("[STARTUP] Chat executor router included successfully")
+else:
+    main_logger.warning("[STARTUP] WARNING: Chat executor router not available - skipping inclusion")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

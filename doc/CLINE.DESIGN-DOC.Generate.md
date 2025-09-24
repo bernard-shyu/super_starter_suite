@@ -21,7 +21,7 @@ This document outlines the implementation of enhanced Generate UI endpoint modif
 {
     "rag_type_1": {
         "timestamp": "ISO datetime string",
-        "data_file_newest": "ISO datetime string",  // Renamed from rag_data_newest
+        "data_newest_time": "ISO datetime string",  // Renamed from rag_data_newest
         "total_files": 10,
         "total_size": 1024000,
         "files": {
@@ -178,7 +178,7 @@ super_starter_suite/
 
 ##### Data Status
 - **Summary Mode**: Default tabular layout
-  - `data_file_newest`: timestamp of newest file
+  - `data_newest_time`: timestamp of newest file
   - `total_files` + `total_size`
   - First filename (partial display)
   - Summary: "Uptodate" (GREEN), "Need Generate" (RED), "Obsolete data" (ORANGE)

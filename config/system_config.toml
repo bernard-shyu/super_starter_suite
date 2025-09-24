@@ -39,6 +39,10 @@ COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
 "sss.gen_session" = 20          # Generate RAG Session Manager
 "sss.workflow" = 20             # workflow adapters porting
 "sss.history" = 20              # chat history
+"sss.history.lifecycle" = 10    # session lifecycle operations
+"sss.history.storage" = 10      # core history persistence
+"sss.history.api" = 10          # history REST API endpoints
+"sss.history.executor" = 10     # chat execution/processing
 "sss.dto" = 20                  # DTO Status Data
 "sss.test" = 20                 # tests
 
@@ -78,26 +82,92 @@ CHATBOT_LLM_PARAMS = { temperature = 0.2, top_p = 0.7 }
 # These are specifically for methods that leverage AI models.
 AI_PARSERS = [
     { GEN_METHOD = "GeminiAI", ID = "gemini-1.5-flash" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-2.0-flash" },
     { GEN_METHOD = "GeminiAI", ID = "gemini-2.0-flash-lite" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-flash" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-flash-lite" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-pro" },
 
     { GEN_METHOD = "NvidiaAI", ID = "microsoft/phi-4-multimodal-instruct" },
+    { GEN_METHOD = "NvidiaAI", ID = "microsoft/phi-3.5-vision-instruct" },
+    { GEN_METHOD = "NvidiaAI", ID = "mistralai/mistral-small-3.1-24b-instruct-2503" },
+    { GEN_METHOD = "NvidiaAI", ID = "meta/llama-4-scout-17b-16e-instruct" },
+    { GEN_METHOD = "NvidiaAI", ID = "meta/llama-4-maverick-17b-128e-instruct" },
+    { GEN_METHOD = "NvidiaAI", ID = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1" },
+    { GEN_METHOD = "NvidiaAI", ID = "google/gemma-3-27b-it" },
     { GEN_METHOD = "NvidiaAI", ID = "google/gemma-3n-e4b-it" },
+    { GEN_METHOD = "NvidiaAI", ID = "google/gemma-3n-e2b-it" },
 ]
 
 CHATBOT = [
     { PROVIDER = "OpenAI",       ID = "gpt-4o" },
+    { PROVIDER = "google_GenAI", ID = "gemini-1.5-flash" },
+    { PROVIDER = "google_GenAI", ID = "gemini-2.0-flash-lite" },
+    { PROVIDER = "google_GenAI", ID = "gemini-2.0-flash" },
+    { PROVIDER = "google_GenAI", ID = "gemini-2.5-flash-lite" },
     { PROVIDER = "google_GenAI", ID = "gemini-2.5-flash" },
+    { PROVIDER = "google_GenAI", ID = "gemini-2.5-pro" },
+    { PROVIDER = "azureAI",      ID = "ai21-labs/AI21-Jamba-1.5-Large" },
+    { PROVIDER = "azureAI",      ID = "cohere/cohere-command-a" },
+    { PROVIDER = "azureAI",      ID = "cohere/Cohere-command-r-08-2024" },
+    { PROVIDER = "azureAI",      ID = "cohere/Cohere-command-r-plus-08-2024" },
     { PROVIDER = "azureAI",      ID = "deepseek/DeepSeek-R1" },
+    { PROVIDER = "azureAI",      ID = "deepseek/DeepSeek-R1-0528" },
+    { PROVIDER = "azureAI",      ID = "deepseek/DeepSeek-V3-0324" },
+    { PROVIDER = "azureAI",      ID = "microsoft/MAI-DS-R1" },
     { PROVIDER = "azureAI",      ID = "microsoft/Phi-4" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-4-Reasoning" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-4-multimodal-instruct" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-3.5-vision-instruct" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-3.5-moe-instruct" },
+    { PROVIDER = "azureAI",      ID = "microsoft/Phi-3-medium-128k-instruct" },
+    { PROVIDER = "azureAI",      ID = "mistral-ai/Codestral-2501" },
+    { PROVIDER = "azureAI",      ID = "mistral-ai/Mistral-Large-2411" },
+    { PROVIDER = "azureAI",      ID = "mistral-ai/mistral-medium-2505" },
+    { PROVIDER = "azureAI",      ID = "meta/Llama-4-Scout-17B-16E-Instruct" },
+    { PROVIDER = "azureAI",      ID = "meta/Llama-4-Maverick-17B-128E-Instruct-FP8" },
+    { PROVIDER = "azureAI",      ID = "openai/gpt-5-chat" },
     { PROVIDER = "azureAI",      ID = "openai/gpt-5" },
     { PROVIDER = "azureAI",      ID = "openai/gpt-4.1" },
+    { PROVIDER = "azureAI",      ID = "openai/gpt-4o" },
+    { PROVIDER = "azureAI",      ID = "openai/o3" },
+    { PROVIDER = "azureAI",      ID = "openai/o3-mini" },
+    { PROVIDER = "azureAI",      ID = "openai/o4-mini" },
     { PROVIDER = "azureAI",      ID = "xai/grok-3" },
+    { PROVIDER = "OpenRouter",   ID = "agentica-org/deepcoder-14b-preview:free" },
+    { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-v3-base:free" },
+    { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-chat-v3-0324:free" },
+    { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-r1:free" },
+    { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-r1-0528:free" },
     { PROVIDER = "OpenRouter",   ID = "deepseek/deepseek-r1-distill-llama-70b" },
+    { PROVIDER = "OpenRouter",   ID = "google/gemini-2.0-flash-exp:free" },
+    { PROVIDER = "OpenRouter",   ID = "meta-llama/llama-4-scout" },
+    { PROVIDER = "OpenRouter",   ID = "meta-llama/llama-4-maverick" },
     { PROVIDER = "OpenRouter",   ID = "openai/gpt-4.1" },
+    { PROVIDER = "OpenRouter",   ID = "openai/o3-mini" },
+    { PROVIDER = "OpenRouter",   ID = "qwen/qwen3-235b-a22b-07-25" },
     { PROVIDER = "OpenRouter",   ID = "x-ai/grok-3" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.1-405b-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.1-70b-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.3-70b-instruct" },
+    { PROVIDER = "nvidia",       ID = "meta/llama-4-maverick-17b-128e-instruct" },
+    { PROVIDER = "nvidia",       ID = "meta/llama-4-scout-17b-16e-instruct" },
+    { PROVIDER = "nvidia",       ID = "mistralai/mistral-large-2-instruct" },
+    { PROVIDER = "nvidia",       ID = "mistralai/mistral-medium-3-instruct" },
+    { PROVIDER = "nvidia",       ID = "mistralai/mistral-small-3.1-24b-instruct-2503  " },
+    { PROVIDER = "nvidia",       ID = "mistralai/magistral-small-2506" },
+    { PROVIDER = "nvidia",       ID = "writer/palmyra-creative-122b" },
+    { PROVIDER = "nvidia",       ID = "writer/palmyra-fin-70b-32k" },
+    { PROVIDER = "nvidia",       ID = "qwen/qwen3-235b-a22b" },
+    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-r1-0528" },
+    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-r1" },
+    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-multimodal-instruct" },
+    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-mini-instruct" },
+    { PROVIDER = "nvidia",       ID = "nvidia/llama-3.1-nemotron-ultra-253b-v1" },
+    { PROVIDER = "nvidia",       ID = "nvidia/llama-3.3-nemotron-super-49b-v1.5" },
+    { PROVIDER = "nvidia",       ID = "nvidia/nemotron-4-340b-instruct" },
+    { PROVIDER = "nvidia",       ID = "nvidia/nemotron-4-340b-reward" },
+    { PROVIDER = "nvidia",       ID = "igenius/colosseum_355b_instruct_16k" },
     { PROVIDER = "nvidia",       ID = "openai/gpt-oss-120b" },
     { PROVIDER = "bernard",      ID = "bern-smart" }
 ]

@@ -96,8 +96,8 @@ class ChatHistoryManager {
     createSessionHtml(session) {
         const date = new Date(session.created_at).toLocaleDateString();
         const time = new Date(session.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        const lastMessage = session.messages?.[session.messages.length - 1];
-        const preview = lastMessage ? this.truncateText(lastMessage.content, 60) : 'No messages yet';
+        // Use title in preview instead of non-existent messages array
+        const preview = session.title || 'Untitled Conversation';
 
         return `
             <div class="session-item" data-session-id="${session.session_id}">
@@ -105,9 +105,9 @@ class ChatHistoryManager {
                     <span class="session-workflow">${this.formatWorkflowName(session.workflow_type)}</span>
                     <span class="session-date">${date} ${time}</span>
                 </div>
-                <div class="session-preview">${preview}</div>
+                <div class="session-preview">${this.truncateText(preview, 60)}</div>
                 <div class="session-meta">
-                    <span>${session.messages?.length || 0} messages</span>
+                    <span>${session.message_count || 0} messages</span>
                     <span>${session.session_id.substring(0, 8)}</span>
                 </div>
             </div>
@@ -273,17 +273,26 @@ class ChatHistoryManager {
     resumeChat() {
         if (!this.currentSession) return;
 
-        // Store session info for resumption
+        // Use the enhanced workflow-aware session resumption
+        console.log(`[ChatHistory] Resuming session ${this.currentSession.session_id} for workflow ${this.currentSession.workflow_type}`);
+
+        // Store session info for potential cross-tab resumption
         sessionStorage.setItem('resumeSession', JSON.stringify({
             sessionId: this.currentSession.session_id,
             workflowType: this.currentSession.workflow_type
         }));
 
-        // Navigate to chat interface
-        if (window.showChatInterface) {
-            window.showChatInterface();
+        // Use workflow-aware resumption that includes workflow context
+        if (window.resumeWorkflowSession) {
+            window.resumeWorkflowSession(this.currentSession.session_id, this.currentSession.workflow_type);
         } else {
-            window.location.href = '/';
+            // Fallback to basic chat interface (should not happen with Phase 4.6)
+            console.warn('[ChatHistory] resumeWorkflowSession not available, using fallback');
+            if (window.showChatInterface) {
+                window.showChatInterface(this.currentSession.session_id);
+            } else {
+                window.location.href = '/';
+            }
         }
     }
 
@@ -366,6 +375,13 @@ class ChatHistoryManager {
                 errorDiv.parentNode.removeChild(errorDiv);
             }
         }, 5000);
+    }
+
+    // Refresh sessions - alias for loadSessions that also updates stats
+    async refreshSessions() {
+        console.log('[ChatHistory] Refreshing sessions');
+        await this.loadSessions();
+        this.updateStats();
     }
 }
 

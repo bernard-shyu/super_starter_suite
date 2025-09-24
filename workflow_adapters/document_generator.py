@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, status
 from fastapi.responses import HTMLResponse
 from typing import Dict, Any
-from super_starter_suite.shared.decorators import bind_user_context
+from super_starter_suite.shared.decorators import bind_workflow_session
 from super_starter_suite.shared.workflow_utils import validate_workflow_payload, create_error_response, log_workflow_execution
 from super_starter_suite.STARTER_TOOLS.document_generator.app.workflow import create_workflow
 from llama_index.core.agent.workflow.workflow_events import AgentWorkflowStartEvent
@@ -16,7 +16,9 @@ adapter_logger = config_manager.get_logger("workflow")
 router = APIRouter()
 
 @router.post("/chat")
-@bind_user_context
+@bind_workflow_session("document-generator")  # CRITICAL: Must come AFTER @router.post()
+# Provides complete chat session management (user config + persistent sessions)
+# No manual session management needed - decorator handles everything
 async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLResponse:
     """
     Endpoint to handle chat requests for the Document Generator workflow.
@@ -32,40 +34,20 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLRespon
             error_html, status_code = create_error_response(error_msg, "Document Generator", 400)
             return HTMLResponse(content=error_html, status_code=status_code)
 
-        # Extract parameters from payload
+        # Extract user message (already added to session by decorator)
         user_message = payload["question"]
-        session_id = payload.get("session_id")  # Optional session ID for chat history
 
-        # Get user context from request state
-        user_id = request.state.user_id
+        # Get session and context prepared by decorator
         user_config = request.state.user_config
-        adapter_logger.debug(f"Document Generator workflow request: URL={request.url}  USER={user_id}  SESSION={session_id}  MSG={user_message[:100]}...")
+        chat_manager = request.state.chat_manager
+        session = request.state.chat_session
+        chat_memory = request.state.chat_memory
 
-        # Use ChatHistoryManager for persistent chat sessions
-        chat_memory = None
-        if session_id:
-            from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager
-            chat_manager = ChatHistoryManager(user_config)
-
-            # Load or create session
-            session = chat_manager.load_session("document_generator", session_id)
-            if not session:
-                # Create new session if it doesn't exist
-                session = chat_manager.create_new_session("document_generator")
-
-            # Add user message to session
-            from super_starter_suite.shared.dto import MessageRole, create_chat_message
-            user_msg = create_chat_message(role=MessageRole.USER, content=user_message)
-            chat_manager.add_message_to_session(session, user_msg)
-
-            # Get LlamaIndex memory for conversation context
-            chat_memory = chat_manager.get_llama_index_memory(session)
-
-            adapter_logger.debug(f"Loaded chat session {session_id} with {len(session.messages)} messages")
+        adapter_logger.debug(f"Workflow endpoint ready: Session {session.session_id} with {len(session.messages)} messages")
 
         # Create ChatRequest object for user context
         chat_request = ChatRequest(
-            id=user_id,
+            id=request.state.user_id,
             messages=[ChatAPIMessage(role=LlamaMessageRole.USER, content=user_message)],
         )
 
@@ -88,16 +70,10 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLRespon
         else:
             response_content = str(result) if result else "Document generation completed successfully"
 
-        # Save assistant response to chat session
-        if session_id and chat_memory:
-            from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager
-            chat_manager = ChatHistoryManager(user_config)
-            session = chat_manager.load_session("document_generator", session_id)
-            if session:
-                # Add assistant response to session
-                assistant_msg = create_chat_message(role=MessageRole.ASSISTANT, content=response_content)
-                chat_manager.add_message_to_session(session, assistant_msg)
-                adapter_logger.debug(f"Saved assistant response to session {session_id}")
+        # Save assistant response to session (decorator-prepared chat_manager handles persistence)
+        assistant_msg = create_chat_message(role=MessageRole.ASSISTANT, content=response_content)
+        chat_manager.add_message_to_session(session, assistant_msg)
+        adapter_logger.debug(f"Saved assistant response to session {session.session_id}")
 
         # Format as HTML response
         response_html = f"<p>{response_content}</p>"

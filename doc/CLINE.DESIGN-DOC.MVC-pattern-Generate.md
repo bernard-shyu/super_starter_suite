@@ -346,7 +346,7 @@ CLASS ProgressData:
 ```
 CLASS StatusData:
     # Essential Properties (Always Carried Across Boundaries)
-    data_file_newest: STRING | NULL = null
+    data_newest_time: STRING | NULL = null
     total_files: INTEGER = 0
     total_size: INTEGER = 0
     files: LIST = []
@@ -521,7 +521,7 @@ status_data.mark_from_cache(cache_key)  // ✅ Track cache usage
 #### **Status Data (Encapsulated)**
 ```json
 {
-  "data_file_newest": "2025-01-01T09:15:00Z",
+  "data_newest_time": "2025-01-01T09:15:00Z",
   "total_files": 25,
   "has_newer_files": false,
   "rag_type": "CODE_GEN",
