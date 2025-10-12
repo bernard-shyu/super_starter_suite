@@ -45,7 +45,7 @@ logger = logging.getLogger("uvicorn")
 logger.setLevel(logging.INFO)
 
 
-def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
+def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds: float = 400.0) -> Workflow:
     index = get_index(chat_request=chat_request)
     if index is None:
         raise ValueError(
@@ -54,7 +54,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
 
     return DeepResearchWorkflow(
         index=index,
-        timeout=400.0,    # default: 120 seconds
+        timeout=timeout_seconds  # Use configurable timeout instead of hardcoded
     )
 
 

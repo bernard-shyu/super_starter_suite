@@ -15,7 +15,7 @@ from llama_index.server.tools.index.citation import (
 )
 
 
-def create_workflow(chat_request: Optional[ChatRequest] = None) -> AgentWorkflow:
+def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds: float = 90.0) -> AgentWorkflow:
     index = get_index(chat_request=chat_request)
     if index is None:
         raise RuntimeError(
@@ -34,7 +34,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> AgentWorkflow
         tools_or_functions=[query_tool],
         llm=Settings.llm,
         system_prompt=system_prompt,
-        timeout=60.0  # Reduced from 300s to 60s for faster feedback
+        timeout=timeout_seconds  # Use configurable timeout instead of hardcoded
     )
     # print(f"[DEBUG] AgentWorkflow created: {workflow}")
     return workflow

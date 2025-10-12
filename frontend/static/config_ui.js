@@ -74,12 +74,15 @@ let userSelect;
 
 // Initialize the UI
 async function initConfigUI(containerElement) {
+    console.log('[DEBUG:initConfigUI] Starting settings UI initialization');
+
     // Ensure configContainer is defined to avoid errors in updateUI
     configContainer = document.createElement('div');
     configContainer.id = 'dummy-config-container';
 
     // Use the provided container element
     settingsContainer = containerElement;
+    console.log('[DEBUG:initConfigUI] Settings container element:', settingsContainer);
 
     // Mark as initialized (specific to settings UI)
     settingsContainer.setAttribute('data-config-ui-initialized', 'true');
@@ -92,31 +95,43 @@ async function initConfigUI(containerElement) {
         </div>
     `;
     settingsContainer.innerHTML = htmlContent;
+    console.log('[DEBUG:initConfigUI] HTML content inserted into settings container');
 
     // Get DOM elements from the container with error checking
     const settingsPanel = getRequiredElement('#settings-panel', settingsContainer);
     saveSettingsBtn = getRequiredElement('#save-settings-btn', settingsContainer);
     userSelect = getOptionalElement('#user-select', settingsContainer);
+    console.log('[DEBUG:initConfigUI] DOM elements found:', {
+        settingsPanel: !!settingsPanel,
+        saveSettingsBtn: !!saveSettingsBtn,
+        userSelect: !!userSelect
+    });
 
     // Assign settingsPanel to settingsContainer for consistency
     settingsContainer = settingsPanel;
 
     try {
+        console.log('[DEBUG:initConfigUI] Loading user state...');
         // Load current user state
         const userState = await apiRequest('/api/user_state');
         currentUserId = userState.current_user || 'Default';
+        console.log('[DEBUG:initConfigUI] User state loaded:', currentUserId);
 
         // Load configurations
         await loadConfigurations();
+        console.log('[DEBUG:initConfigUI] Configurations loaded successfully');
 
         // Set up event listeners
         setupEventListeners();
+        console.log('[DEBUG:initConfigUI] Event listeners set up');
 
         // Update UI
         updateUI();
+        console.log('[DEBUG:initConfigUI] UI updated successfully');
         return true;
     } catch (error) {
-        console.error('Error initializing config UI:', error);
+        console.error('[DEBUG:initConfigUI] Error initializing config UI:', error);
+        console.error('[DEBUG:initConfigUI] Full error details:', error.stack);
         showError(`Failed to initialize configuration UI: ${error.message}`);
         return false;
     }
@@ -1039,14 +1054,15 @@ function showError(message) {
 
 // Initialize system configuration UI (for Configuration button)
 async function initSystemConfigUI(containerElement) {
-    console.log('Starting system configuration UI initialization');
+    console.log('[DEBUG:initSystemConfigUI] Starting system configuration UI initialization');
 
     // Use the provided container element
     configContainer = containerElement;
+    console.log('[DEBUG:initSystemConfigUI] Config container element:', configContainer);
 
     // Check if config UI is already initialized
     if (configContainer.getAttribute('data-config-ui-initialized')) {
-        console.log('System config UI already initialized, skipping');
+        console.log('[DEBUG:initSystemConfigUI] System config UI already initialized, skipping');
         return false;
     }
 
@@ -1061,19 +1077,21 @@ async function initSystemConfigUI(containerElement) {
         </div>
     `;
     configContainer.innerHTML = htmlContent;
-
-    // Get DOM elements from the container with a small delay to ensure DOM is ready
-    // Removed await for DOM settle (replaced with synchronous flow)
+    console.log('[DEBUG:initSystemConfigUI] HTML content inserted into config container');
 
     // Use more robust element selection with error checking
     const configPanel = configContainer.querySelector('#config-panel');
     saveConfigBtn = configContainer.querySelector('#save-config-btn');
+    console.log('[DEBUG:initSystemConfigUI] DOM elements found:', {
+        configPanel: !!configPanel,
+        saveConfigBtn: !!saveConfigBtn
+    });
 
     // Verify all elements were found
     if (!configPanel || !saveConfigBtn) {
-        console.error('Critical DOM elements missing after delay for system config UI:',
-            { configPanel: !!configPanel,
-              saveConfigBtn: !!saveConfigBtn });
+        console.error('[DEBUG:initSystemConfigUI] Critical DOM elements missing for system config UI:',
+            { configPanel: !!configPanel, saveConfigBtn: !!saveConfigBtn });
+        console.error('[DEBUG:initSystemConfigUI] Container innerHTML:', configContainer.innerHTML);
         showError('Critical DOM elements missing for system config UI');
         return false;
     }
@@ -1081,46 +1099,39 @@ async function initSystemConfigUI(containerElement) {
     // Assign configPanel to configContainer for consistency with existing logic
     configContainer = configPanel;
 
-    console.log('System config DOM elements found:', {
-        configContainer: !!configContainer,
-        saveConfigBtn: !!saveConfigBtn
-    });
-
     // Set UI mode to system configuration
     currentSettings = {}; // Clear user settings for system config mode
     currentUserId = 'SYSTEM';
 
     try {
-        console.log('Loading system configuration...');
+        console.log('[DEBUG:initSystemConfigUI] Loading system configuration...');
         // Load system config
         const systemConfigResponse = await fetch('/api/config');
-        console.log('System config API response status:', systemConfigResponse.status);
+        console.log('[DEBUG:initSystemConfigUI] System config API response status:', systemConfigResponse.status);
         if (!systemConfigResponse.ok) {
             const errorText = await systemConfigResponse.text();
-            console.error('Failed to load system config. Status:', systemConfigResponse.status, 'Response:', errorText);
+            console.error('[DEBUG:initSystemConfigUI] Failed to load system config. Status:', systemConfigResponse.status, 'Response:', errorText);
             throw new Error(`Failed to load system config: ${systemConfigResponse.status} - ${errorText}`);
         }
         currentConfig = await systemConfigResponse.json();
-
-        console.log('System configuration loaded');
+        console.log('[DEBUG:initSystemConfigUI] System configuration loaded successfully');
 
         // Set up event listeners for system config
-        console.log('Setting up system config event listeners...');
+        console.log('[DEBUG:initSystemConfigUI] Setting up event listeners...');
         if (!saveConfigBtn) {
             throw new Error('Save config button not found');
         }
         saveConfigBtn.addEventListener('click', saveConfiguration);
-
-        console.log('System config event listeners set up');
+        console.log('[DEBUG:initSystemConfigUI] Event listeners set up');
 
         // Update UI with system config
-        console.log('Updating system config UI...');
+        console.log('[DEBUG:initSystemConfigUI] Updating UI...');
         updateSystemConfigUI();
-        console.log('System config UI updated');
+        console.log('[DEBUG:initSystemConfigUI] UI updated successfully');
         return true;
     } catch (error) {
-        console.error('Error initializing system config UI:', error);
-        console.error('Error stack:', error.stack);
+        console.error('[DEBUG:initSystemConfigUI] Error initializing system config UI:', error);
+        console.error('[DEBUG:initSystemConfigUI] Full error details:', error.stack);
         showError(`Failed to initialize system configuration UI: ${error.message}`);
         return false;
     }

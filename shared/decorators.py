@@ -1,6 +1,6 @@
 from functools import wraps
 from fastapi import Request, HTTPException
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from .config_manager import config_manager
 from .llama_utils import init_llm
 
@@ -114,31 +114,36 @@ def bind_rag_session(func):
     return unified_bound_function
 
 
-def bind_workflow_session(workflow_name: str):
+def bind_workflow_session(workflow_config):
     """
-    Unified decorator for workflow_adapters that provides chat history session management.
+    UNIFIED DECORATOR with behavior flags for all workflow types.
 
-    This decorator combines user context binding with persistent chat session management:
-    1. Initializes user_config from request.state.user_id (like bind_user_context)
-    2. Sets up ChatHistoryManager and SessionLifecycleManager
-    3. Ensures one persistent session per workflow type
-    4. Loads session and LlamaIndex memory for conversation context
-    5. Injects session objects into request.state for endpoint use
-
-    After endpoint execution, caller is responsible for:
-    - Adding assistant response to session via chat_manager.add_message_to_session()
+    This unified decorator replaces bind_workflow_session and bind_workflow_session_porting,
+    dynamically managing behavior based on configuration flags instead of hardcoded logic.
 
     Args:
-        workflow_name: The workflow type identifier (e.g., "agentic-rag", "code-generator")
+        workflow_type: "adapted" (imports STARTER_TOOLS), "ported" (direct logic), "meta" (orchestration)
+        response_format: "json" (for artifacts + response), "html" (legacy format)
+        artifact_enabled: True to enable artifact extraction and synthetic response generation
+        chat_history_context: True to maintain conversation history
 
     Returns:
-        Decorated function with chat session context in request.state
+        Decorated function with configurable workflow session context
     """
     def decorator(func):
         @wraps(func)
-        async def workflow_bound_function(request: Request, payload: Dict[str, Any], *args, **kwargs):
+        async def unified_workflow_bound_function(request: Request, payload: Dict[str, Any], *args, **kwargs):
+            # SINGLE RESPONSIBILITY: Use raw workflow ID from TOML config for consistent session keys
+            workflow_name = workflow_config.workflow_ID
+
             try:
-                logger.debug(f"bind_workflow_session({workflow_name}): Starting for {func.__name__}")
+                # Extract workflow configuration attributes (now available outside try)
+                workflow_type = workflow_config.workflow_type
+                response_format = workflow_config.response_format
+                artifact_enabled = workflow_config.artifact_enabled
+                chat_history_context = workflow_config.chat_history_context
+
+                logger.debug(f"bind_workflow_session({workflow_name}): CONFIG-DRIVEN decorator starting for {func.__name__}")
 
                 # Step 1: Initialize user_config (like bind_user_context)
                 user_id = getattr(request.state, 'user_id', 'Default')
@@ -151,40 +156,41 @@ def bind_workflow_session(workflow_name: str):
                 except Exception as e:
                     logger.error(f"bind_workflow_session: Failed to initialize LLM for user {user_id}: {str(e)}")
 
-                # Step 3: Set up chat session management
-                from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
-                from super_starter_suite.shared.dto import MessageRole, create_chat_message
+                # Step 3: ROUTE SESSION MANAGEMENT THROUGH SessionAuthority (SINGLE SOURCE OF TRUTH)
+                if chat_history_context:
+                    from super_starter_suite.chat_bot.session_authority import session_authority as _session_authority
 
-                chat_manager = ChatHistoryManager(user_config)
-                request.state.chat_manager = chat_manager
+                    # SINGLE SOURCE: All session operations go through SessionAuthority
+                    # This ensures one active session per workflow, no more uncoordinated creation
+                    session_data = _session_authority.get_or_create_session(
+                        workflow_name=workflow_name,
+                        user_config=user_config,
+                        existing_session_id=None  # Decorators get what's available, don't specify
+                    )
 
-                # Step 4: Get or create ONE persistent session for this workflow
-                session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
-                persistent_session_id = session_lifecycle.get_or_create_workflow_session(workflow_name)
+                    session = session_data['session']
+                    request.state.chat_session = session
+                    request.state.chat_memory = session_data.get('memory')
+                    replaced_session_id = session_data.get('replaced_session_id')
 
-                # Step 5: Load the persistent session
-                session = chat_manager.load_session(workflow_name, persistent_session_id)
-                if not session:
-                    logger.error(f"bind_workflow_session: Failed to load session {persistent_session_id} for {workflow_name}")
-                    raise HTTPException(status_code=500, detail=f"Failed to load chat session for {workflow_name}")
+                    if replaced_session_id:
+                        logger.debug(f"bind_workflow_session({workflow_name}): Session {replaced_session_id[:8]}... replaced by {session.session_id[:8]}...")
+                    else:
+                        logger.debug(f"bind_workflow_session({workflow_name}): Using session {session.session_id[:8]}... for {workflow_name}")
 
-                request.state.chat_session = session
-                request.state.session_lifecycle = session_lifecycle
+                    logger.debug(f"bind_workflow_session({workflow_name}): Session {session.session_id} ready with {len(session.messages)} messages via bridge")
+                else:
+                    # Minimal setup for non-chat workflows
+                    request.state.chat_manager = None
+                    request.state.chat_session = None
+                    request.state.chat_memory = None
 
-                # Step 6: Add user message to session if present
-                user_message = payload.get("question") or payload.get("user_message")
-                if user_message:
-                    user_msg = create_chat_message(role=MessageRole.USER, content=user_message)
-                    chat_manager.add_message_to_session(session, user_msg)
-                    logger.debug(f"bind_workflow_session: Added user message to session {session.session_id}")
+                # Step 8: Store workflow config in request state for endpoint access
+                request.state.workflow_config = workflow_config
 
-                # Step 7: Get LlamaIndex memory for conversation context
-                chat_memory = chat_manager.get_llama_index_memory(session)
-                request.state.chat_memory = chat_memory
+                logger.debug(f"bind_workflow_session({workflow_name}): Configured with workflow_type={workflow_type}")
 
-                logger.debug(f"bind_workflow_session({workflow_name}): Session {session.session_id} ready with {len(session.messages)} messages")
-
-                # Step 8: Execute the workflow endpoint
+                # Step 9: Execute the workflow endpoint
                 result = await func(request, payload, *args, **kwargs)
 
                 return result
@@ -199,97 +205,5 @@ def bind_workflow_session(workflow_name: str):
                     detail=f"Failed to initialize workflow session context: {str(e)}"
                 )
 
-        return workflow_bound_function
-    return decorator
-
-
-def bind_workflow_session_porting(workflow_name: str):
-    """
-    Unified decorator for workflow_porting that provides chat history session management.
-
-    This decorator is specifically designed for porting workflows which may have different
-    payload structures or requirements compared to adapter workflows.
-
-    Combines user context binding with persistent chat session management:
-    1. Initializes user_config from request.state.user_id (like bind_user_context)
-    2. Sets up ChatHistoryManager and SessionLifecycleManager
-    3. Ensures one persistent session per workflow type
-    4. Loads session and LlamaIndex memory for conversation context
-    5. Injects session objects into request.state for endpoint use
-
-    After endpoint execution, caller is responsible for:
-    - Adding assistant response to session via chat_manager.add_message_to_session()
-
-    Args:
-        workflow_name: The workflow type identifier (e.g., "agentic-rag", "code-generator")
-
-    Returns:
-        Decorated function with chat session context in request.state
-    """
-    def decorator(func):
-        @wraps(func)
-        async def workflow_porting_bound_function(request: Request, payload: Dict[str, Any], *args, **kwargs):
-            try:
-                logger.debug(f"bind_workflow_session_porting({workflow_name}): Starting for {func.__name__}")
-
-                # Step 1: Initialize user_config (like bind_user_context)
-                user_id = getattr(request.state, 'user_id', 'Default')
-                user_config = config_manager.get_user_config(user_id)
-                request.state.user_config = user_config
-
-                # Step 2: Initialize LLM for user
-                try:
-                    init_llm(user_config)
-                except Exception as e:
-                    logger.error(f"bind_workflow_session_porting: Failed to initialize LLM for user {user_id}: {str(e)}")
-
-                # Step 3: Set up chat session management
-                from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
-                from super_starter_suite.shared.dto import MessageRole, create_chat_message
-
-                chat_manager = ChatHistoryManager(user_config)
-                request.state.chat_manager = chat_manager
-
-                # Step 4: Get or create ONE persistent session for this workflow
-                session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
-                persistent_session_id = session_lifecycle.get_or_create_workflow_session(workflow_name)
-
-                # Step 5: Load the persistent session
-                session = chat_manager.load_session(workflow_name, persistent_session_id)
-                if not session:
-                    logger.error(f"bind_workflow_session_porting: Failed to load session {persistent_session_id} for {workflow_name}")
-                    raise HTTPException(status_code=500, detail=f"Failed to load chat session for {workflow_name}")
-
-                request.state.chat_session = session
-                request.state.session_lifecycle = session_lifecycle
-
-                # Step 6: Add user message to session if present (may use different payload keys)
-                user_message = payload.get("question") or payload.get("user_message") or payload.get("message")
-                if user_message:
-                    user_msg = create_chat_message(role=MessageRole.USER, content=user_message)
-                    chat_manager.add_message_to_session(session, user_msg)
-                    logger.debug(f"bind_workflow_session_porting: Added user message to session {session.session_id}")
-
-                # Step 7: Get LlamaIndex memory for conversation context
-                chat_memory = chat_manager.get_llama_index_memory(session)
-                request.state.chat_memory = chat_memory
-
-                logger.debug(f"bind_workflow_session_porting({workflow_name}): Session {session.session_id} ready with {len(session.messages)} messages")
-
-                # Step 8: Execute the workflow endpoint
-                result = await func(request, payload, *args, **kwargs)
-
-                return result
-
-            except HTTPException:
-                logger.error(f"bind_workflow_session_porting({workflow_name}): HTTPException caught, re-raising")
-                raise
-            except Exception as e:
-                logger.error(f"bind_workflow_session_porting({workflow_name}): EXCEPTION: {str(e)}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to initialize workflow porting session context: {str(e)}"
-                )
-
-        return workflow_porting_bound_function
+        return unified_workflow_bound_function
     return decorator

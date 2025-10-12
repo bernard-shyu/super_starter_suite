@@ -37,7 +37,6 @@ COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
 "sss.gen_manager" = 20          # Generate Manager MVC-Model
 "sss.gen_event" = 20            # Generate Event System
 "sss.gen_session" = 20          # Generate RAG Session Manager
-"sss.workflow" = 20             # workflow adapters porting
 "sss.history" = 20              # chat history
 "sss.history.lifecycle" = 10    # session lifecycle operations
 "sss.history.storage" = 10      # core history persistence
@@ -45,6 +44,13 @@ COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
 "sss.history.executor" = 10     # chat execution/processing
 "sss.dto" = 20                  # DTO Status Data
 "sss.test" = 20                 # tests
+
+# WORKFLOW-SPECIFIC LOGGING CONFIGURATION - Granular control for pluggable architecture
+"sss.workflow.bzlogic" = 10     # workflow business logic (adapters/porting) - DEBUG level for workflow execution
+"sss.workflow.loader" = 10      # workflow module loading system - DEBUG level for configuration issues
+"sss.workflow.utils" = 10       # workflow utilities - INFO level
+"sss.workflow.server" = 10      # workflow server management - INFO level
+"sss.workflow.multi_agent" = 10 # workflow Multi-Agent Orchestration Framework
 
 # EXTERNAL LIBRARY LOGGING CONTROL - Suppress noisy third-party libraries
 "httpx" = 20                    # HTTP client library
@@ -147,27 +153,57 @@ CHATBOT = [
     { PROVIDER = "OpenRouter",   ID = "openai/o3-mini" },
     { PROVIDER = "OpenRouter",   ID = "qwen/qwen3-235b-a22b-07-25" },
     { PROVIDER = "OpenRouter",   ID = "x-ai/grok-3" },
+    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-r1-0528" },
+    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-v3.1-terminus" },
+    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-v3.1" },
+    { PROVIDER = "nvidia",       ID = "igenius/colosseum_355b_instruct_16k" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.1-405b-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.1-70b-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-3.3-70b-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-4-maverick-17b-128e-instruct" },
     { PROVIDER = "nvidia",       ID = "meta/llama-4-scout-17b-16e-instruct" },
+    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-multimodal-instruct" },
+    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-mini-instruct" },
     { PROVIDER = "nvidia",       ID = "mistralai/mistral-large-2-instruct" },
     { PROVIDER = "nvidia",       ID = "mistralai/mistral-medium-3-instruct" },
     { PROVIDER = "nvidia",       ID = "mistralai/mistral-small-3.1-24b-instruct-2503  " },
     { PROVIDER = "nvidia",       ID = "mistralai/magistral-small-2506" },
-    { PROVIDER = "nvidia",       ID = "writer/palmyra-creative-122b" },
-    { PROVIDER = "nvidia",       ID = "writer/palmyra-fin-70b-32k" },
-    { PROVIDER = "nvidia",       ID = "qwen/qwen3-235b-a22b" },
-    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-r1-0528" },
-    { PROVIDER = "nvidia",       ID = "deepseek-ai/deepseek-r1" },
-    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-multimodal-instruct" },
-    { PROVIDER = "nvidia",       ID = "microsoft/phi-4-mini-instruct" },
     { PROVIDER = "nvidia",       ID = "nvidia/llama-3.1-nemotron-ultra-253b-v1" },
     { PROVIDER = "nvidia",       ID = "nvidia/llama-3.3-nemotron-super-49b-v1.5" },
     { PROVIDER = "nvidia",       ID = "nvidia/nemotron-4-340b-instruct" },
     { PROVIDER = "nvidia",       ID = "nvidia/nemotron-4-340b-reward" },
-    { PROVIDER = "nvidia",       ID = "igenius/colosseum_355b_instruct_16k" },
     { PROVIDER = "nvidia",       ID = "openai/gpt-oss-120b" },
+    { PROVIDER = "nvidia",       ID = "qwen/qwen3-235b-a22b" },
+    { PROVIDER = "nvidia",       ID = "qwen/qwen3-coder-480b-a35b-instruct" },
+    { PROVIDER = "nvidia",       ID = "qwen/qwen3-next-80b-a3b-instruct" },
+    { PROVIDER = "nvidia",       ID = "qwen/qwen3-next-80b-a3b-thinking" },
+    { PROVIDER = "nvidia",       ID = "stockmark/stockmark-2-100b-instruct" },
+    { PROVIDER = "nvidia",       ID = "writer/palmyra-creative-122b" },
+    { PROVIDER = "nvidia",       ID = "writer/palmyra-fin-70b-32k" },
     { PROVIDER = "bernard",      ID = "bern-smart" }
 ]
+
+#---------------------------------------------------------------------------------------------
+# Pluggable Workflow Configuration Section
+# - Defines all available workflows with their metadata and configurations
+# - 'icon' field can be smiley, or image path (ex. '/static/icons/agentic.png')
+# - Enhanced with artifact behavior flags for unified decorator and ChatHistoryManager
+# - workflow_type: 
+#   * adapted: workflows imported from STARTER_TOOLS, no business logic
+#   * ported:  workflows ported (NOT imported) from STARTER_TOOLS, with business logic
+#   * meta:    workflows of orchestration/multi-agent/complex beyond the basic adapted/ported categories
+#---------------------------------------------------------------------------------------------
+[WORKFLOW]
+A_agentic_rag        = { code_path = "workflow_adapters.agentic_rag",        timeout =  90.0, display_name = "Agentic RAG (Adapted)",          icon = "🧠", description = "Intelligent document analysis with autonomous agents",   workflow_type = "adapted", response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated" }
+A_code_generator     = { code_path = "workflow_adapters.code_generator",     timeout = 240.0, display_name = "Code Generator (Adapted)",       icon = "💻", description = "AI-powered code generation and completion",              workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files" }
+A_deep_research      = { code_path = "workflow_adapters.deep_research",      timeout = 240.0, display_name = "Deep Research (Adapted)",        icon = "🔍", description = "Comprehensive research and analysis",                    workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables" }
+A_document_generator = { code_path = "workflow_adapters.document_generator", timeout = 240.0, display_name = "Document Generator (Adapted)",   icon = "📄", description = "Automated document creation",                            workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents" }
+A_financial_report   = { code_path = "workflow_adapters.financial_report",   timeout = 300.0, display_name = "Financial Report (Adapted)",     icon = "📊", description = "Financial data analysis and reporting",                  workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports" }
+A_human_in_the_loop  = { code_path = "workflow_adapters.human_in_the_loop",  timeout = 120.0, display_name = "Human in the Loop (Adapted)",    icon = "👥", description = "Interactive workflows with human oversight",             workflow_type = "adapted", response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results" }
+AM_multi_agent       = { code_path = "workflow_meta.multi_agent",            timeout = 300.0, display_name = "Multi-Agent Orchestration",      icon = "🔗", description = "Coordinated multi-agent pipelines with shared memory",   workflow_type = "meta",    response_format = "json", artifact_enabled = true,  synthetic_response = "Multi-agent pipeline completed with {count} outputs" }
+P_agentic_rag        = { code_path = "workflow_porting.agentic_rag",         timeout =  90.0, display_name = "Agentic RAG (Ported)",           icon = "🧠", description = "Intelligent document analysis with autonomous agents",   workflow_type = "ported",  response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated" }
+P_code_generator     = { code_path = "workflow_porting.code_generator",      timeout = 240.0, display_name = "Code Generator (Ported)",        icon = "💻", description = "AI-powered code generation and completion",              workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files" }
+P_deep_research      = { code_path = "workflow_porting.deep_research",       timeout = 400.0, display_name = "Deep Research (Ported)",         icon = "🔍", description = "Comprehensive research and analysis",                    workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables" }
+P_document_generator = { code_path = "workflow_porting.document_generator",  timeout = 240.0, display_name = "Document Generator (Ported)",    icon = "📄", description = "Automated document creation",                            workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents" }
+P_financial_report   = { code_path = "workflow_porting.financial_report",    timeout = 300.0, display_name = "Financial Report (Ported)",      icon = "📊", description = "Financial data analysis and reporting",                  workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports" }
+P_human_in_the_loop  = { code_path = "workflow_porting.human_in_the_loop",   timeout = 120.0, display_name = "Human in the Loop (Ported)",     icon = "👥", description = "Interactive workflows with human oversight",             workflow_type = "ported",  response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results" }

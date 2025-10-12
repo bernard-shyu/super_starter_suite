@@ -15,40 +15,19 @@
                 <span class="icon">&#9776;</span> <!-- Hamburger icon -->
             </div>
             <ul class="menu-list">
-                <li><button id="login-btn" class="menu-button"><img src="/static/icons/login.png" alt="Login" class="icon-img"><span> Login / Associate User</span></button></li>
-                <li><button id="settings-btn" class="menu-button"><img src="/static/icons/settings.png" alt="Settings" class="icon-img"><span> Settings</span></button></li>
-                <li><button id="config-btn" class="menu-button"><img src="/static/icons/config.png" alt="Configuration" class="icon-img"><span> Configuration</span></button></li>
-                <li><button id="generate-btn" class="menu-button"><img src="/static/icons/generate.png" alt="Generate" class="icon-img"><span> Generate</span></button></li>
-                <li><button id="chat-history-btn" class="menu-button"><img src="/static/icons/chat_history.png" alt="Chat History" class="icon-img" onerror="this.src='/static/icons/settings.png'"><span> Chat History</span></button></li>
-                <li class="menu-group-title" data-group="adapted">
+                <li><button id="login-btn" class="menu-button"><img src="/static/icons/login.png" alt="Login" width="20" height="20" class="icon-img"><span> Login / Associate User</span></button></li>
+                <li><button id="settings-btn" class="menu-button"><img src="/static/icons/settings.png" alt="Settings" width="20" height="20" class="icon-img"><span> Settings</span></button></li>
+                <li><button id="config-btn" class="menu-button"><img src="/static/icons/config.png" alt="Configuration" width="20" height="20" class="icon-img"><span> Configuration</span></button></li>
+                <li><button id="generate-btn" class="menu-button"><img src="/static/icons/generate.png" alt="Generate" width="20" height="20" class="icon-img"><span> Generate</span></button></li>
+                <li><button id="chat-history-btn" class="menu-button"><img src="/static/icons/chat_history.png" alt="Chat History" width="20" height="20" class="icon-img" onerror="this.src='/static/icons/settings.png'"><span> Chat History</span></button></li>
+                <li class="menu-group-title" data-group="dynamic-workflows">
                     <div class="group-header">
-                        <button id="adapted-group-btn" class="menu-button group-workflow" data-group="adapted"><img src="/static/icons/adapted_group.png" alt="Adapted Group" class="icon-img"><span> Workflow Adapted</span></button>
-                        <button class="menu-button group-toggle" data-group="adapted"><span class="icon">&#9776;</span></button>
+                        <button id="dynamic-workflows-group-btn" class="menu-button group-workflow" data-group="dynamic-workflows"><img src="/static/icons/dynamic_group.png" class="icon-img"><span> Dynamic Workflows</span></button>
+                        <button class="menu-button group-toggle" data-group="dynamic-workflows"><span class="icon">&#9776;</span></button>
                     </div>
-                    <div class="group-content" id="adapted-content">
-                        <ul>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="agentic-rag"><img src="/static/icons/agentic.png" alt="Agentic" class="icon-img"><span> Agentic RAG</span></button></li>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="code-generator"><img src="/static/icons/code.png" alt="Code" class="icon-img"><span> Code Generator</span></button></li>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="deep-research"><img src="/static/icons/research.png" alt="Research" class="icon-img"><span> Deep Research</span></button></li>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="document-generator"><img src="/static/icons/document.png" alt="Document" class="icon-img"><span> Document Generator</span></button></li>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="financial-report"><img src="/static/icons/finance.png" alt="Finance" class="icon-img"><span> Financial Report</span></button></li>
-                            <li class="adapted-workflows"><button class="menu-button workflow-button" data-workflow="human-in-the-loop"><img src="/static/icons/human.png" alt="Human" class="icon-img"><span> Human in the Loop</span></button></li>
-                        </ul>
-                    </div>
-                </li>
-                <li class="menu-group-title" data-group="ported">
-                    <div class="group-header">
-                        <button id="ported-group-btn" class="menu-button group-workflow" data-group="ported"><img src="/static/icons/ported_group.png" alt="Ported Group" class="icon-img"><span> Workflow Ported</span></button>
-                        <button class="menu-button group-toggle" data-group="ported"><span class="icon">&#9776;</span></button>
-                    </div>
-                    <div class="group-content" id="ported-content">
-                        <ul>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="agentic-rag"><img src="/static/icons/agentic.png" alt="Agentic" class="icon-img"><span> Agentic RAG</span></button></li>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="code-generator"><img src="/static/icons/code.png" alt="Code" class="icon-img"><span> Code Generator</span></button></li>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="deep-research"><img src="/static/icons/research.png" alt="Research" class="icon-img"><span> Deep Research</span></button></li>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="document-generator"><img src="/static/icons/document.png" alt="Document" class="icon-img"><span> Document Generator</span></button></li>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="financial-report"><img src="/static/icons/finance.png" alt="Finance" class="icon-img"><span> Financial Report</span></button></li>
-                            <li class="ported-workflows"><button class="menu-button workflow-button" data-workflow="human-in-the-loop"><img src="/static/icons/human.png" alt="Human" class="icon-img"><span> Human in the Loop</span></button></li>
+                    <div class="group-content" id="dynamic-workflows-content">
+                        <ul class="workflows-list">
+                            <!-- Workflows will be dynamically populated here by script.js -->
                         </ul>
                     </div>
                 </li>
@@ -65,8 +44,8 @@
                 <div id="status-dynamic-message">Ready</div>
             </div>
 
-            <!-- Right Panel (Main Content Area) -->
-            <div class="right-panel" id="chat-area">
+            <!-- Content Panel (Main Content Area) -->
+            <div class="content-panel" id="chat-area">
                 <!-- Welcome Page -->
                 <div id="welcome-page" class="welcome-page">
                     <h1>Super Starter Suite</h1>
@@ -79,54 +58,11 @@
 
                     <div class="workflow-selection">
                         <h3>Available Workflows</h3>
-                        <div class="workflow-grid">
-                            <div class="workflow-card" data-workflow="agentic-rag">
-                                <div class="workflow-icon">🧠</div>
-                                <div class="workflow-info">
-                                    <strong>Agentic RAG</strong>
-                                    <small>Intelligent document analysis with autonomous agents</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="agentic-rag">Select</button>
-                            </div>
-                            <div class="workflow-card" data-workflow="code-generator">
-                                <div class="workflow-icon">💻</div>
-                                <div class="workflow-info">
-                                    <strong>Code Generator</strong>
-                                    <small>AI-powered code generation and completion</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="code-generator">Select</button>
-                            </div>
-                            <div class="workflow-card" data-workflow="deep-research">
-                                <div class="workflow-icon">🔍</div>
-                                <div class="workflow-info">
-                                    <strong>Deep Research</strong>
-                                    <small>Comprehensive research and analysis</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="deep-research">Select</button>
-                            </div>
-                            <div class="workflow-card" data-workflow="document-generator">
-                                <div class="workflow-icon">📄</div>
-                                <div class="workflow-info">
-                                    <strong>Document Generator</strong>
-                                    <small>Automated document creation</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="document-generator">Select</button>
-                            </div>
-                            <div class="workflow-card" data-workflow="financial-report">
-                                <div class="workflow-icon">📊</div>
-                                <div class="workflow-info">
-                                    <strong>Financial Report</strong>
-                                    <small>Financial data analysis and reporting</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="financial-report">Select</button>
-                            </div>
-                            <div class="workflow-card" data-workflow="human-in-the-loop">
-                                <div class="workflow-icon">👥</div>
-                                <div class="workflow-info">
-                                    <strong>Human in the Loop</strong>
-                                    <small>Interactive workflows with human oversight</small>
-                                </div>
-                                <button class="select-workflow-btn" data-workflow="human-in-the-loop">Select</button>
+                        <div class="workflow-grid" id="dynamic-workflow-grid">
+                            <!-- Workflows will be dynamically populated here from /api/workflows endpoint -->
+                            <div class="loading-workflows">
+                                <div class="loading-spinner"></div>
+                                Loading available workflows...
                             </div>
                         </div>
                     </div>
@@ -156,8 +92,13 @@
                 <div id="chat-interface" class="chat-interface" style="display: none;">
                     <div id="message-container" class="message-container"></div>
                     <div class="input-area">
-                        <input type="text" id="user-input" class="user-input" placeholder="Type your message...">
-                        <button id="send-button" class="send-button">Send</button>
+                        <div class="input-controls">
+                            <button id="new-session-btn" class="new-session-btn" title="Start New Session">
+                                🆕 New Session
+                            </button>
+                            <input type="text" id="user-input" class="user-input" placeholder="Type your message...">
+                            <button id="send-button" class="send-button">Send</button>
+                        </div>
                     </div>
                 </div>
 
@@ -179,9 +120,29 @@
         </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <!-- Phase 5.6D Frontend Modularization - Load modularized scripts -->
+    <!-- Core modules moved to static root for better organization -->
+    <script src="/static/global-state.js"></script>
+    <script src="/static/main-ui-manager.js"></script>
+    <script src="/static/workflow-manager.js"></script>
+    <script src="/static/modules/chat-ui-manager.js"></script>
+    <script src="/static/modules/artifact-display-manager.js"></script>
+
+    <!-- Legacy UI components still needed -->
     <script src="/static/config_ui.js"></script>
-    <script src="/static/chat_history_manager.js"></script>
-    <script src="/static/chat_ui_enhancements.js"></script>
+
+    <!-- Chat-related frontend modules (moved to modules/chat/ for better organization) -->
+    <script src="/static/modules/chat/chat_history_manager.js"></script>
+    <script src="/static/modules/chat/chat_ui_enhancements.js"></script>
+    <script src="/static/modules/chat/session-manager.js"></script>
+    <script src="/static/modules/chat/session-recovery.js"></script>
+    <script src="/static/modules/chat/chat-ui-manager.js"></script>
+    <script src="/static/modules/chat/session-visualizer.js"></script>
+
+    <!-- Human-in-the-loop workflow interaction handling -->
+    <script src="/static/modules/human-in-the-loop-manager.js"></script>
+
+    <!-- Main application logic (button event handlers, workflow management, etc.) -->
+    <script src="/static/script.js"></script>
 </body>
 </html>

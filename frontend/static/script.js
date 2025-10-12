@@ -1,10 +1,16 @@
-// Global status bar structure
-const statusBarStruct = {
-    status_message: 'Ready',
-    current_model_provider: '',
-    current_model_id: '',
-    current_workflow: ''
-};
+// Initialize legacy support for status bar (handled by global-state.js)
+try {
+    if (typeof statusBarStruct === 'undefined') {
+        statusBarStruct = {
+            status_message: 'Ready',
+            current_model_provider: '',
+            current_model_id: '',
+            current_workflow: ''
+        };
+    }
+} catch (error) {
+    console.error('Error during initialization:', error);
+}
 
 // Global utility functions
 function generateUUID() {
@@ -15,9 +21,13 @@ function generateUUID() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-// Theme management
-let currentTheme = 'light_classic';
-let availableThemes = [];
+// Theme management - legacy fallback support
+if (typeof currentTheme === 'undefined') {
+    currentTheme = 'light_classic';
+}
+if (typeof availableThemes === 'undefined') {
+    availableThemes = [];
+}
 
 // Theme management functions
 async function loadAvailableThemes() {
@@ -50,137 +60,17 @@ async function loadCurrentTheme() {
         console.error('Error loading current theme:', error);
         currentTheme = 'light_classic';
     }
-    await applyTheme(currentTheme);
+    // Note: applyTheme is now handled by main-ui-manager.js
 }
 
-async function applyTheme(themeName) {
-    if (!themeName) return;
-
-    console.log(`[DEBUG] Starting theme application: ${themeName}`);
-
-    try {
-        // Parse theme into color and style
-        const [color, style] = themeName.split('_');
-
-        console.log(`[DEBUG] Parsed theme components - Color: ${color}, Style: ${style}`);
-
-        // Remove old style CSS files before loading new ones
-        // This ensures clean switching between Classic and Modern styles
-        removeOldStyleCSS();
-
-        // Load style-specific CSS files FIRST (main CSS)
-        console.log(`[DEBUG] Loading style-specific CSS files first`);
-        await loadThemeCSS(`/static/config_ui.${style}.css`);
-        await loadThemeCSS(`/static/main_style.${style}.css`);
-
-        // Load color-specific CSS LAST (theme CSS) - so theme variables take precedence
-        console.log(`[DEBUG] Loading color theme CSS last: /static/themes/${color}.css`);
-        await loadThemeCSS(`/static/themes/${color}.css`);
-
-        // Apply theme class to body for additional styling
-        document.body.className = document.body.className.replace(/theme-\w+/g, '');
-        document.body.classList.add(`theme-${color}`, `style-${style}`);
-
-        console.log(`[DEBUG] Applied theme ${themeName} classes to body: theme-${color}, style-${style}`);
-    } catch (error) {
-        console.error('Error applying theme:', error);
-    }
-}
-
-// Function to remove old style CSS files
-function removeOldStyleCSS() {
-    // Remove any existing style-specific CSS files
-    const styleCSSFiles = [
-        'config_ui.classic.css',
-        'config_ui.modern.css',
-        'main_style.classic.css',
-        'main_style.modern.css'
-    ];
-
-    styleCSSFiles.forEach(filename => {
-        const existingLink = document.querySelector(`link[href*="${filename}"]`);
-        if (existingLink) {
-            existingLink.remove();
-            console.log(`Removed old CSS file: ${filename}`);
-        }
-    });
-}
-
-async function loadThemeCSS(href) {
-    return new Promise((resolve, reject) => {
-        console.log(`[DEBUG] Starting CSS load for: ${href}`);
-
-        // Check if CSS is already loaded
-        let existingLink = document.querySelector(`link[href="${href}"]`);
-
-        if (existingLink) {
-            console.log(`[DEBUG] Removing existing CSS link for: ${href}`);
-            // For theme switching, we need to ensure the CSS is reloaded
-            // Remove the existing link and create a new one to force reload
-            existingLink.remove();
-        }
-
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = href + '?v=' + Date.now(); // Add timestamp to prevent caching
-
-        link.onload = () => {
-            // console.log(`[DEBUG] Successfully loaded CSS: ${href}`);
-            resolve();
-        };
-
-        link.onerror = (event) => {
-            console.error(`[DEBUG] Failed to load CSS: ${href}`, event);
-            reject(new Error(`Failed to load CSS: ${href}`));
-        };
-
-        document.head.appendChild(link);
-        // console.log(`[DEBUG] Added CSS link to head for: ${href}`);
-    });
-}
-
-async function switchTheme(themeName) {
-    if (!availableThemes.includes(themeName)) {
-        console.error(`Theme '${themeName}' is not available`);
-        return false;
-    }
-
-    try {
-        const response = await fetch('/api/themes/current', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ theme: themeName })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            currentTheme = themeName;
-            await applyTheme(themeName);
-            console.log(`Theme switched to: ${themeName}`);
-            return true;
-        } else {
-            const error = await response.json();
-            console.error('Failed to switch theme:', error.detail);
-            return false;
-        }
-    } catch (error) {
-        console.error('Error switching theme:', error);
-        return false;
-    }
-}
+    // Theme management functions removed - now handled by MainUIManager.applyTheme(), switchTheme(), etc.
 
 // Make theme functions globally available
 window.switchTheme = switchTheme;
 window.getCurrentTheme = () => currentTheme;
 window.getAvailableThemes = () => availableThemes;
 
-// Chat functionality
-let currentWorkflow = null;
-let currentChatSessionId = null; // Current chat session ID
-let currentView = 'chat'; // 'chat', 'settings', 'config', 'generate'
-let pendingSessionResume = null; // Store session to resume on page load
+// All global state now managed by global-state.js
 
 // Enhanced Session Management - Phase 4.6 Implementation
 // ======================================================
@@ -191,7 +81,7 @@ let pendingSessionResume = null; // Store session to resume on page load
 
 // Save current session state to localStorage for persistence
 function saveCurrentSessionState() {
-    if (!currentWorkflow || !currentChatSessionId) return;
+    if (!window.globalState.currentWorkflow || !window.globalState.currentChatSessionId) return;
 
     // Only save session state with actual messages (not just workflow selection)
     const messageCount = document.getElementById('message-container')?.children.length || 0;
@@ -201,9 +91,9 @@ function saveCurrentSessionState() {
     }
 
     const sessionState = {
-        workflow: currentWorkflow,
-        sessionId: currentChatSessionId,
-        view: currentView,
+        workflow: window.globalState.currentWorkflow,
+        sessionId: window.globalState.currentChatSessionId,
+        view: window.globalState.currentView,
         timestamp: Date.now(),
         messageCount: messageCount
     };
@@ -264,7 +154,7 @@ async function resumeWorkflowSession(sessionState) {
 
     try {
         // First, select the workflow
-        currentWorkflow = workflow;
+        window.globalState.currentWorkflow = workflow;
 
         // Then show the appropriate view with session resumption
         switch (view) {
@@ -275,7 +165,7 @@ async function resumeWorkflowSession(sessionState) {
             default:
                 showWelcomePage();
                 // Set currentWorkflow for reference
-                currentWorkflow = workflow;
+                window.globalState.currentWorkflow = workflow;
                 break;
         }
 
@@ -313,6 +203,169 @@ async function validateSession(workflow, sessionId) {
     }
 }
 
+// LEFT-PANEL SESSION MENU: Option B - Expanded group under Chat History button
+let sessionMenuInitialized = false;
+
+function initializeSessionMenu() {
+    if (sessionMenuInitialized) return;
+    sessionMenuInitialized = true;
+
+    // Insert session menu group after Chat History button
+    const chatHistoryBtn = document.querySelector('#chat-history-btn');
+    if (chatHistoryBtn) {
+        const sessionMenuHTML = `
+            <li class="menu-group-title session-menu-group" data-group="current-workflow-sessions" style="display: none;">
+                <div class="group-header">
+                    <button class="menu-button group-session" data-group="current-workflow-sessions">
+                        <span class="inline-icon">💬</span>
+                        <span id="session-menu-title">Current Workflow Sessions</span>
+                    </button>
+                    <button class="menu-button group-toggle session-toggle" data-group="current-workflow-sessions">
+                        <span class="icon">▶</span>
+                    </button>
+                </div>
+                <div class="group-content session-group-content" id="current-workflow-sessions-content" style="display: none;">
+                    <div class="session-menu" id="current-workflow-session-menu">
+                        <div class="session-loading">Loading sessions...</div>
+                    </div>
+                </div>
+            </li>
+        `;
+
+        chatHistoryBtn.closest('li').insertAdjacentHTML('afterend', sessionMenuHTML);
+
+        // Attach event handlers
+        attachSessionMenuHandlers();
+
+        console.log('[SessionMenu] Session menu initialized');
+    }
+}
+
+function attachSessionMenuHandlers() {
+    // Toggle session menu
+    document.querySelectorAll('.session-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function() {
+            const group = this.getAttribute('data-group');
+            const content = document.getElementById(`${group}-content`);
+            const isExpanded = content.style.display !== 'none';
+
+            if (isExpanded) {
+                content.style.display = 'none';
+                this.innerHTML = '<span class="icon">▶</span>';
+            } else {
+                content.style.display = 'block';
+                this.innerHTML = '<span class="icon">▼</span>';
+            }
+        });
+    });
+}
+
+async function updateSessionMenu(workflow) {
+    const sessionMenuGroup = document.querySelector('.session-menu-group');
+    const sessionMenuTitle = document.getElementById('session-menu-title');
+    const sessionMenu = document.getElementById('current-workflow-session-menu');
+
+    if (!sessionMenuGroup || !sessionMenu) return;
+
+    if (!workflow) {
+        // Hide session menu when no workflow active
+        sessionMenuGroup.style.display = 'none';
+        return;
+    }
+
+    // Show session menu for active workflow
+    sessionMenuGroup.style.display = 'list-item';
+    sessionMenuTitle.textContent = `${workflow.replace('_', ' ').toUpperCase()} Sessions`;
+
+    try {
+        // Load sessions for current workflow
+        const response = await fetch(`/api/${workflow}/chat_history`);
+        const data = await response.json();
+
+        if (data.sessions && data.sessions.length > 0) {
+            const sessionHTML = data.sessions.map(session => {
+                const isActive = window.globalState.currentChatSessionId === session.session_id;
+                const timeAgo = formatTimeAgo(session.updated_at);
+                const activeClass = isActive ? 'active-session' : '';
+                const sessionIcon = isActive ? '🔥' : '📄';
+                const displayTitle = session.title || `Session ${session.session_id.substring(0, 8)}`;
+                const safeTitle = displayTitle.replace(/ /g, '&nbsp;'); // Preserve spaces
+
+                return `
+                    <li class="workflows session-item">
+                        <button class="menu-button session-menu-button ${activeClass}" data-session-id="${session.session_id}" title="${displayTitle}" style="white-space: nowrap; display: flex; align-items: center; width: 100%;">
+                            <span class="inline-icon">${sessionIcon}</span>
+                            <span style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden; flex: 1; font-size: 11px;">${safeTitle}</span>
+                        </button>
+                    </li>
+                `;
+            }).join('');
+
+            sessionMenu.innerHTML = sessionHTML;
+        } else {
+            sessionMenu.innerHTML = '<div class="session-menu-empty">No sessions yet</div>';
+        }
+
+        // Attach event handlers
+        attachSessionItemHandlers();
+
+    } catch (error) {
+        console.error('[SessionMenu] Failed to load sessions:', error);
+        sessionMenu.innerHTML = '<div class="session-menu-error">Failed to load sessions</div>';
+    }
+}
+
+function attachSessionItemHandlers() {
+    // Resume session buttons (now links to menu-button click)
+    document.querySelectorAll('.session-menu-button').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const sessionId = e.target.closest('button').dataset.sessionId;
+            await resumeSessionFromMenu(sessionId);
+        });
+    });
+
+    // Show all sessions button (opens full session manager)
+    const showAllBtn = document.getElementById('show-all-sessions-btn');
+    if (showAllBtn) {
+        showAllBtn.addEventListener('click', () => {
+            if (window.showSessionsUI) {
+                window.showSessionsUI();
+            } else {
+                console.error('[SessionMenu] Session manager not available');
+            }
+        });
+    }
+}
+
+// Updated: Pass workflow context when resuming sessions from menu
+async function resumeSessionFromMenu(sessionId) {
+    console.log(`[SessionMenu] Resuming session: ${sessionId} for workflow: ${window.globalState.currentWorkflow}`);
+
+    if (window.showChatInterface) {
+        // ShowChatInterface should now use workflow-specific endpoint
+        await window.showChatInterface(sessionId);
+        updateStatus('Session resumed from menu', 'success');
+    }
+}
+
+function formatTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    if (diffHours < 1) {
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`;
+    } else if (diffHours < 24) {
+        return `${Math.floor(diffHours)}h ago`;
+    } else {
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays}d ago`;
+    }
+}
+
 // Enhanced workflow selection with persistent SESSION LIFECYCLE MANAGEMENT
 async function selectWorkflowWithSessionManagement(workflow) {
     console.log(`[SessionManager] Selecting workflow: ${workflow}`);
@@ -320,7 +373,24 @@ async function selectWorkflowWithSessionManagement(workflow) {
     // Save current session state before switching
     saveCurrentSessionState();
 
-    currentWorkflow = workflow;
+    window.globalState.currentWorkflow = workflow;
+
+    // STATUS BAR UPDATE: Always show current workflow in status bar
+    const workflowDisplayName = workflow.replace('_', ' ').toUpperCase();
+    console.log(`[StatusBar] Setting current_workflow to: ${workflowDisplayName}`);
+
+    if (window.mainUIManager?.setStatusBar) {
+        window.mainUIManager.setStatusBar('current_workflow', workflowDisplayName);
+        console.log(`[StatusBar] Updated status bar via MainUIManager`);
+    } else if (window.setStatusBar) {
+        window.setStatusBar('current_workflow', workflowDisplayName);
+        console.log(`[StatusBar] Updated status bar via global function`);
+    } else {
+        console.warn(`[StatusBar] No status bar update function available`, {
+            mainUIManager: !!window.mainUIManager,
+            setStatusBar: !!window.setStatusBar
+        });
+    }
 
     // WORKFLOW LIFECYCLE: Backend manages session IDs for workflows
     const backendSessionId = await getBackendWorkflowSessionId(workflow);
@@ -328,10 +398,21 @@ async function selectWorkflowWithSessionManagement(workflow) {
 
     showLoadingPage(`${workflow.replace('-', ' ').toUpperCase()} Workflow`, 'Loading RAG indexes...');
 
-    setTimeout(() => {
+    // AUTO-COLLAPSE DYNAMIC WORKFLOWS: When workflow active, collapse workflow selection
+    setTimeout(async () => {
+        // Critical: Ensure workflow context is properly set BEFORE showing chat interface
+        window.globalState.currentWorkflow = workflow;
+        window.globalState.currentChatSessionId = backendSessionId;
+
         // Backend SessionLifecycleManager ensures ONE session per workflow
-        showChatInterface(backendSessionId);
+        await showChatInterface(backendSessionId);
         updateStatus(`Ready to chat with ${workflow} workflow.`, 'success');
+
+        // UPDATE SESSION MENU: Show sessions for active workflow
+        initializeSessionMenu();
+        await updateSessionMenu(workflow);
+
+        console.log(`[SessionManager] Workflow context set: ${workflow} with session ${backendSessionId}`);
     }, 1500);
 }
 
@@ -407,7 +488,7 @@ async function detectExistingWorkflowSession(workflow) {
 
         // Find most recent session for this workflow
         const workflowSessions = sessions
-            .filter(session => session.workflow_type === workflow)
+            .filter(session => session.workflow_name === workflow)
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         return workflowSessions.length > 0 ? workflowSessions[0].session_id : null;
@@ -434,10 +515,10 @@ window.resumeWorkflowSession = function(sessionState) {
     console.log(`[SessionManager] Resuming session ${sessionId} for workflow ${workflowType}`);
 
     // Set current workflow
-    currentWorkflow = workflowType;
+    window.globalState.currentWorkflow = workflowType;
 
     // Store for potential cross-tab resumption
-    pendingSessionResume = { sessionId, workflowType };
+    window.globalState.pendingSessionResume = { sessionId, workflowType };
 
     // Navigate to chat interface with workflow-specific session
     if (window.showChatInterface) {
@@ -514,16 +595,18 @@ window.resumeWorkflowSession = window.resumeWorkflowSession;
 window.initializeSessionRecovery = initializeSessionRecovery;
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize UI components and event handlers
+
     // Initialize elements
-    const leftPanel = document.getElementById('left-panel');
-    const menuToggle = document.getElementById('menu-toggle');
-    const resizer = document.getElementById('resizer');
     const chatArea = document.getElementById('chat-area');
     const welcomePage = document.getElementById('welcome-page');
     const chatInterface = document.getElementById('chat-interface');
     const messageContainer = document.getElementById('message-container');
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
+    const menuToggle = document.getElementById('menu-toggle');
+    const leftPanel = document.getElementById('left-panel');
+    const resizer = document.getElementById('resizer');
     let lastWidth = 0;
 
     // View management functions
@@ -566,22 +649,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (sessionIdToResume) {
             currentChatSessionId = sessionIdToResume;
-            // Fetch and display existing messages for the session
+            window.globalState.currentChatSessionId = sessionIdToResume;
+
+            // Fetch and display existing messages for the session using workflow-specific endpoint
             try {
-                const response = await fetch(`/api/chat_history/sessions/${sessionIdToResume}`);
+                const response = await fetch(`/api/${window.globalState.currentWorkflow}/chat_history/${sessionIdToResume}`);
                 if (response.ok) {
                     const sessionData = await response.json();
                     sessionData.messages.forEach(msg => {
-                        addMessage(msg.role, msg.content);
+                        const messageId = msg.message_id || msg.id;
+                        if (window.chatUIManager?.addMessage) {
+                            window.chatUIManager.addMessage(msg.role, msg.content, 'normal', messageId);
+                        } else {
+                            addMessage(msg.role, msg.content); // Fallback for old system
+                        }
                     });
-                    addMessage('system', `Resumed chat with ${currentWorkflow} workflow (Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
+                    addMessage('system', `Resumed chat with ${window.globalState.currentWorkflow} workflow (Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
                 } else {
                     console.error('Failed to load session for resumption:', sessionIdToResume);
                     addMessage('system', `Failed to resume chat session ${sessionIdToResume.substring(0, 8)}. Starting new conversation.`, 'error');
                     // Clear stale session state when resumption fails
                     clearSessionState();
                     currentChatSessionId = generateUUID(); // Start a new one if resume fails
-                    addMessage('system', `Ready to chat with ${currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
+                    window.globalState.currentChatSessionId = currentChatSessionId; // Also set global
+                    addMessage('system', `Ready to chat with ${window.globalState.currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
                 }
             } catch (error) {
                 console.error('Error loading session for resumption:', error);
@@ -589,13 +680,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Clear stale session state when resumption fails
                 clearSessionState();
                 currentChatSessionId = generateUUID(); // Start a new one if error
-                addMessage('system', `Ready to chat with ${currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
+                window.globalState.currentChatSessionId = currentChatSessionId; // Also set global
+                    addMessage('system', `Ready to chat with ${window.globalState.currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
             }
         } else {
             // Start a new session
             currentChatSessionId = generateUUID();
-            if (currentWorkflow) {
-                addMessage('system', `Ready to chat with ${currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
+            window.globalState.currentChatSessionId = currentChatSessionId; // Also set global
+            if (window.globalState.currentWorkflow) {
+                addMessage('system', `Ready to chat with ${window.globalState.currentWorkflow} workflow (New Session: ${currentChatSessionId.substring(0, 8)})`, 'system');
             }
         }
     }
@@ -708,8 +801,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const message = userInput.value.trim();
-        if (!message || !currentWorkflow) {
-            if (!currentWorkflow) {
+        if (!message || !window.globalState.currentWorkflow) {
+            if (!window.globalState.currentWorkflow) {
                 addMessage('system', 'Please select a workflow first.', 'system');
             }
             return;
@@ -719,7 +812,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addMessage('user', message);
         userInput.value = '';
 
-        updateStatus(`Sending message to ${currentWorkflow}...`, 'in-progress');
+        updateStatus(`Sending message to ${window.globalState.currentWorkflow}...`, 'in-progress');
 
         // Show typing indicator for AI response
         let typingIndicator = null;
@@ -728,14 +821,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const workflowType = document.querySelector(`.workflow-button[data-workflow="${currentWorkflow}"]`).closest('.adapted-workflows') ? 'adapted' : 'ported';
-            
             const payload = { question: message };
             if (currentChatSessionId) {
                 payload.session_id = currentChatSessionId;
             }
 
-            const response = await fetch(`/api/${workflowType}/${currentWorkflow}/chat`, {
+            // Use unified workflow execution endpoint (executor_endpoint.py)
+            const response = await fetch(`/api/chat/${window.globalState.currentWorkflow}/session/${currentChatSessionId || 'new'}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -747,14 +839,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const htmlContent = await response.text();
+            const data = await response.json();
 
             // Hide typing indicator and add AI response
             if (window.chatUIEnhancements && typingIndicator) {
                 window.chatUIEnhancements.hideTypingIndicator();
             }
-            addMessage('ai', htmlContent);
-            updateStatus(`Message sent to ${currentWorkflow}.`, 'success');
+
+            // Extract response content from unified API response and use message_id if available
+            const messageId = data.message_id;
+            if (data.response) {
+                if (window.chatUIManager?.addMessage) {
+                    window.chatUIManager.addMessage('ai', data.response, 'normal', messageId);
+                } else {
+                    addMessage('ai', data.response);
+                }
+            } else {
+                if (window.chatUIManager?.addMessage) {
+                    window.chatUIManager.addMessage('ai', 'No response generated', 'normal', messageId);
+                } else {
+                    addMessage('ai', 'No response generated');
+                }
+            }
+
+            // Update session ID if new session was created
+            if (data.session_id && !currentChatSessionId) {
+                currentChatSessionId = data.session_id;
+                console.log(`[sendMessage] New session created: ${currentChatSessionId}`);
+            }
+
+            updateStatus(`Message sent to ${window.globalState.currentWorkflow}.`, 'success');
 
         } catch (error) {
             console.error('Error sending message:', error);
@@ -787,32 +901,75 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // New Session button handler - prepares UI for NEW SESSION creation (SessionAuthority singleton responsibility)
+    const newSessionBtn = document.getElementById('new-session-btn');
+    if (newSessionBtn) {
+        newSessionBtn.addEventListener('click', async () => {
+            if (!window.globalState.currentWorkflow) {
+                addMessage('system', 'Please select a workflow first.', 'error');
+                return;
+            }
+
+            console.log(`[NewSession] Preparing for new session with workflow: ${window.globalState.currentWorkflow}`);
+
+            try {
+                // Save current session state before preparing for new one
+                saveCurrentSessionState();
+
+                // CLEAR local state - DO NOT generate UUID (SessionAuthority singleton is responsible for session creation)
+                // Frontend should NOT manage session creation - that's SessionAuthority's single responsibility
+                currentChatSessionId = null;  // NULL = let SesisonAuthority create proper session ID
+                window.globalState.currentChatSessionId = null;
+
+                // Clear the chat interface UI
+                const messageContainer = document.getElementById('message-container');
+                if (messageContainer) {
+                    messageContainer.innerHTML = '';
+                }
+
+                // Add system message indicating ready for new session
+                addMessage('system', `✨ Ready for new session with ${window.globalState.currentWorkflow.replace(/[_\-]/g, ' ')} workflow`);
+                addMessage('system', '💬 Send your first message to create a new session through SessionAuthority', 'system');
+
+                updateStatus(`Prepared for new ${window.globalState.currentWorkflow} session (send message to create)`, 'info');
+                console.log(`[NewSession] UI prepared - session creation delegated to SessionAuthority singleton`);
+
+            } catch (error) {
+                console.error('[NewSession] Failed to prepare new session:', error);
+                updateStatus('Failed to prepare new session', 'error');
+                addMessage('system', '❌ Failed to prepare new session', 'error');
+            }
+        });
+        console.log('[EventHandler] New Session button event handler attached (SessionAuthority design compliant)');
+    } else {
+        console.warn('[EventHandler] New Session button not found');
+    }
+
     // Enhanced Workflow button handling with session management
     document.querySelectorAll('.workflow-button').forEach((button) => {
         button.addEventListener('click', enhancedWorkflowButtonHandler);
     });
 
     // Menu toggle functionality
-    menuToggle.addEventListener('click', () => {
-        const isCollapsed = leftPanel.classList.toggle('collapsed');
+    if (menuToggle) {
+        menuToggle.addEventListener('click', () => {
+            const isCollapsed = leftPanel.classList.toggle('collapsed');
 
-        const adaptedContent = document.getElementById('adapted-content');
-        const portedContent = document.getElementById('ported-content');
+            const dynamicWorkflowsContent = document.getElementById('dynamic-workflows-content');
 
-        if (isCollapsed) {
-            lastWidth = leftPanel.getBoundingClientRect().width;
-            leftPanel.style.width = '60px';
+            if (isCollapsed) {
+                lastWidth = leftPanel.getBoundingClientRect().width;
+                leftPanel.style.width = '60px';
 
-            if (adaptedContent) adaptedContent.style.display = 'none';
-            if (portedContent) portedContent.style.display = 'none';
-        } else {
-            if (lastWidth > 0) {
-                leftPanel.style.width = `${lastWidth}px`;
+                if (dynamicWorkflowsContent) dynamicWorkflowsContent.style.display = 'none';
+            } else {
+                if (lastWidth > 0) {
+                    leftPanel.style.width = `${lastWidth}px`;
+                }
+                if (dynamicWorkflowsContent) dynamicWorkflowsContent.style.display = 'block';
             }
-            if (adaptedContent) adaptedContent.style.display = 'block';
-            if (portedContent) portedContent.style.display = 'block';
-        }
-    });
+        });
+    }
 
     // Status bar functions
     async function fetchAndUpdateStaticStatus() {
@@ -835,81 +992,216 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderStatusBar() {
-        const staticInfoElement = document.getElementById('status-static-info');
-        const dynamicMessageElement = document.getElementById('status-dynamic-message');
-
-        const staticParts = [];
-        if (statusBarStruct.current_model_provider) {
-            staticParts.push(`Provider: ${statusBarStruct.current_model_provider}`);
-        }
-        if (statusBarStruct.current_model_id) {
-            staticParts.push(`Model: ${statusBarStruct.current_model_id}`);
-        }
-        if (statusBarStruct.current_workflow) {
-            staticParts.push(`Workflow: ${statusBarStruct.current_workflow}`);
-        }
-
-        if (staticParts.length > 0) {
-            staticInfoElement.textContent = staticParts.join(' | ');
-        } else {
-            staticInfoElement.textContent = 'Loading user state...';
-        }
-
-        dynamicMessageElement.textContent = statusBarStruct.status_message;
-        dynamicMessageElement.className = '';
-    }
-
-    function updateStatus(message, statusType = 'info') {
-        setStatusBar('status_message', message);
-
-        const dynamicMessageElement = document.getElementById('status-dynamic-message');
-        dynamicMessageElement.className = '';
-
-        if (dynamicMessageElement.dataset.intervalId) {
-            clearInterval(parseInt(dynamicMessageElement.dataset.intervalId));
-            delete dynamicMessageElement.dataset.intervalId;
-        }
-
-        switch (statusType) {
-            case 'success':
-                dynamicMessageElement.classList.add('status-success');
-                break;
-            case 'error':
-                dynamicMessageElement.classList.add('status-error');
-                break;
-            case 'in-progress':
-                dynamicMessageElement.classList.add('status-in-progress');
-                let smileyIndex = 0;
-                const smileys = ['😊', '😀', '😎'];
-                const originalMessage = message;
-                const intervalId = setInterval(() => {
-                    smileyIndex = (smileyIndex + 1) % smileys.length;
-                    setStatusBar('status_message', originalMessage + ' ' + smileys[smileyIndex]);
-                }, 1000);
-                dynamicMessageElement.dataset.intervalId = intervalId;
-                break;
-            case 'info':
-            default:
-                dynamicMessageElement.classList.add('status-info');
-                break;
-        }
-    }
-
-
-
-    function setStatusBar(key, val) {
-        if (key in statusBarStruct) {
-            statusBarStruct[key] = val;
-        }
-        renderStatusBar();
-    }
+    // Status management functions removed - now handled by MainUIManager.updateStatus() and setStatusBar()
 
     // Initialize status bar
     fetchAndUpdateStaticStatus();
 
-    // Make fetchAndUpdateStaticStatus globally available
-    window.fetchAndUpdateStaticStatus = fetchAndUpdateStaticStatus;
+// Workflow Management Functions
+// ==============================
+// Available workflows loaded from API
+let availableWorkflows = [];
+
+// Load workflows from API endpoint
+async function loadAvailableWorkflows() {
+    try {
+        console.log('[WorkflowManager] Loading workflows from API...');
+        const response = await fetch('/api/workflows');
+
+        if (!response.ok) {
+            console.error('[WorkflowManager] Failed to load workflows from API:', response.status);
+            // Fallback to empty list if API fails
+            availableWorkflows = [];
+            return [];
+        }
+
+        const data = await response.json();
+        availableWorkflows = data.workflows || [];
+        console.log('[WorkflowManager] Loaded workflows:', availableWorkflows.length);
+        return availableWorkflows;
+    } catch (error) {
+        console.error('[WorkflowManager] Error loading workflows:', error);
+        availableWorkflows = [];
+        return [];
+    }
+}
+
+// Get workflow by ID
+function getWorkflowById(workflowId) {
+    return availableWorkflows.find(w => w.id === workflowId);
+}
+
+// Generate workflow card HTML from configuration
+function generateWorkflowCard(workflow) {
+    return `
+        <div class="workflow-card" data-workflow="${workflow.id}">
+            <div class="workflow-icon">${workflow.icon}</div>
+            <div class="workflow-info">
+                <strong>${workflow.display_name}</strong>
+                <small>${workflow.description}</small>
+            </div>
+            <button class="select-workflow-btn" data-workflow="${workflow.id}">Select</button>
+        </div>
+    `;
+}
+
+// Generate workflow menu item HTML from configuration
+function generateWorkflowMenuItem(workflow) {
+    const displayName = workflow.display_name.replace(/ /g, '&nbsp;'); // Preserve spaces in button text
+
+    return `
+        <li class="workflows">
+            <button class="menu-button workflow-button" data-workflow="${workflow.id}" title="${workflow.display_name}">
+                <span class="inline-icon">${workflow.icon}</span>
+                <span>${displayName}</span>
+            </button>
+        </li>
+    `;
+}
+
+// Update welcome page workflow grid with loaded workflows - Phase 5.3: Dynamic workflow loading
+async function updateWelcomePageWorkflows() {
+    const workflowGrid = document.getElementById('dynamic-workflow-grid');
+    if (!workflowGrid) {
+        console.warn('[WorkflowManager] Dynamic workflow grid not found');
+        return;
+    }
+
+    console.log('[WorkflowManager] Updating welcome page with dynamic workflows...');
+
+    // Show loading state
+    workflowGrid.innerHTML = `
+        <div class="loading-workflows">
+            <div class="loading-spinner"></div>
+            Loading available workflows...
+        </div>
+    `;
+
+    try {
+        // Load workflows from API endpoint
+        if (availableWorkflows.length === 0) {
+            await loadAvailableWorkflows();
+        }
+
+        if (availableWorkflows.length > 0) {
+            // Generate dynamic workflow cards from API data
+            const workflowCards = availableWorkflows.map(generateWorkflowCard).join('');
+            workflowGrid.innerHTML = workflowCards;
+
+            // Re-attach event handlers for new buttons
+            attachWorkflowSelectionHandlers();
+
+            console.log(`[WorkflowManager] Successfully loaded ${availableWorkflows.length} workflows in welcome page`);
+            updateStatus(`Loaded ${availableWorkflows.length} workflows successfully.`, 'success');
+
+            // Phase 5.3 - Critical: Attach event handlers to dynamically loaded workflow buttons
+            console.log('[WorkflowManager] Attaching event handlers to dynamic workflow buttons...');
+            attachWorkflowSelectionHandlers();
+            console.log('[WorkflowManager] Event handlers attached successfully');
+        } else {
+            workflowGrid.innerHTML = `
+                <div class="error-message">
+                    <strong>No workflows available</strong><br>
+                    Please check your system configuration and try refreshing the page.
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('[WorkflowManager] Error updating welcome page workflows:', error);
+        workflowGrid.innerHTML = `
+            <div class="error-message">
+                <strong>Failed to load workflows</strong><br>
+                ${error.message}
+            </div>
+        `;
+        updateStatus('Failed to load workflows.', 'error');
+    }
+}
+
+// Update left panel menu with loaded workflows
+async function updateLeftPanelWorkflows() {
+    // For dynamic workflows section
+    const dynamicWorkflowsContent = document.getElementById('dynamic-workflows-content');
+    if (!dynamicWorkflowsContent) {
+        console.warn('[WorkflowManager] Dynamic workflows content element not found');
+        return;
+    }
+
+    // Find the workflow list container
+    let workflowsList = dynamicWorkflowsContent.querySelector('.workflows-list');
+    if (!workflowsList) {
+        console.warn('[WorkflowManager] Workflows list element not found');
+        return;
+    }
+
+    console.log('[WorkflowManager] Updating left panel workflows...', 'availableWorkflows:', availableWorkflows.length);
+
+    if (availableWorkflows.length === 0) {
+        await loadAvailableWorkflows();
+        console.log('[WorkflowManager] After loading availableWorkflows count:', availableWorkflows.length);
+    }
+
+    if (availableWorkflows.length > 0) {
+        // Clear existing workflow items (but keep header if any)
+        workflowsList.querySelectorAll('.workflows').forEach(li => li.remove());
+
+        // Add new workflow items
+        availableWorkflows.forEach(workflow => {
+            const menuItem = generateWorkflowMenuItem(workflow);
+            workflowsList.insertAdjacentHTML('beforeend', menuItem);
+        });
+
+        console.log('[WorkflowManager] Added', availableWorkflows.length, 'workflow menu items');
+
+        // Re-attach event handlers for new buttons
+        attachLeftPanelWorkflowHandlers();
+    } else {
+        console.warn('[WorkflowManager] No workflows available to display in left panel');
+    }
+}
+
+// Attach event handlers to workflow selection buttons
+function attachWorkflowSelectionHandlers() {
+    document.querySelectorAll('.select-workflow-btn').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            event.preventDefault();
+            const workflowId = event.target.getAttribute('data-workflow');
+
+            // Phase 5.3 - Direct workflow ID usage for dynamic workflows
+            if (workflowId) {
+                console.log(`[WorkflowManager] Welcome page workflow selection: ${workflowId}`);
+                await selectWorkflowWithSessionManagement(workflowId);
+            }
+        });
+    });
+}
+
+// Attach event handlers to left panel workflow buttons
+function attachLeftPanelWorkflowHandlers() {
+    document.querySelectorAll('.workflow-button').forEach(button => {
+        button.addEventListener('click', enhancedWorkflowButtonHandler);
+    });
+}
+
+// Initialize dynamic workflow loading
+async function initializeDynamicWorkflows() {
+    console.log('[WorkflowManager] Initializing dynamic workflows...');
+
+    try {
+        await loadAvailableWorkflows();
+
+        // Update UI components with loaded workflows
+        await updateWelcomePageWorkflows();
+        await updateLeftPanelWorkflows();
+
+        console.log('[WorkflowManager] Dynamic workflows initialized with', availableWorkflows.length, 'workflows');
+        updateStatus(`Loaded ${availableWorkflows.length} workflows successfully.`, 'success');
+
+    } catch (error) {
+        console.error('[WorkflowManager] Failed to initialize dynamic workflows:', error);
+        updateStatus('Failed to load workflows.', 'error');
+    }
+}
 
     // Resizer functionality
     let startX = 0;
@@ -927,14 +1219,16 @@ document.addEventListener('DOMContentLoaded', () => {
         lastWidth = leftPanel.getBoundingClientRect().width;
     }
 
-    resizer.addEventListener('mousedown', (e) => {
-        if (leftPanel.classList.contains('collapsed')) return;
+    if (resizer && leftPanel) {
+        resizer.addEventListener('mousedown', (e) => {
+            if (leftPanel.classList.contains('collapsed')) return;
 
-        startX = e.clientX;
-        startWidth = leftPanel.getBoundingClientRect().width;
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    });
+            startX = e.clientX;
+            startWidth = leftPanel.getBoundingClientRect().width;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
 
     // Group toggle functionality
     document.querySelectorAll('.group-toggle').forEach(toggle => {
@@ -942,35 +1236,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = this.getAttribute('data-group');
             const content = document.getElementById(`${group}-content`);
 
-            if (content.style.display === 'none' || content.style.display === '') {
-                content.style.display = 'block';
-                this.innerHTML = '<span class="icon">&#9776;</span>';
+            if (content) {
+                console.log(`[GroupToggle] Toggling group: ${group}`);
+                if (content.style.display === 'none' || content.style.display === '') {
+                    content.style.display = 'block';
+                    this.innerHTML = '<span class="icon">&#9776;</span>';
+                    console.log(`[GroupToggle] Expanded group: ${group}`);
+                } else {
+                    content.style.display = 'none';
+                    this.innerHTML = '<span class="icon">&#9776;</span>';
+                    console.log(`[GroupToggle] Collapsed group: ${group}`);
+                }
             } else {
-                content.style.display = 'none';
-                this.innerHTML = '<span class="icon">&#9776;</span>';
+                console.warn(`[GroupToggle] Content element not found for group: ${group}`);
             }
         });
     });
 
-    // Workflow selection button handlers
-    document.querySelectorAll('.select-workflow-btn').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-
-            const workflow = event.target.getAttribute('data-workflow');
-            currentWorkflow = workflow;
-
-            // Show loading page for selected workflow
-            showLoadingPage(workflow);
-
-            // Simulate workflow loading time
-            setTimeout(() => {
-                showChatInterface();
-                updateStatus(`Switched to ${workflow} workflow.`, 'success');
-            }, 1500); // 1.5 second loading simulation
-        });
-    });
+    // Note: Workflow selection handlers are now managed by attachWorkflowSelectionHandlers()
+    // which is called after dynamic workflow loading
 
     // Other button handlers
     document.getElementById('login-btn').addEventListener('click', async () => {
@@ -1049,45 +1333,61 @@ document.getElementById('config-btn').addEventListener('click', async () => {
 
     document.getElementById('generate-btn').addEventListener('click', async () => {
         // Navigate to the new RAG generation UI page
-        window.location.href = '/static/generate_ui.html';
+        window.location.href = '/static/modules/generate/generate_ui.html';
     });
 
     const chatHistoryBtn = document.getElementById('chat-history-btn');
     if (chatHistoryBtn) {
         chatHistoryBtn.addEventListener('click', async () => {
-            console.log('[DEBUG] Chat History button clicked');
-            showLoadingPage('Chat History', 'Loading chat history interface...');
+            console.log('[DEBUG] Chat History button clicked - using SessionManager');
+            showLoadingPage('Session Management', 'Loading session management interface...');
 
             setTimeout(async () => {
-                showChatHistoryUI();
-                updateStatus('Chat history loaded successfully.', 'success');
+                // Use SessionManager for proper Chat History UI with workflow grouping and advanced features
+                if (typeof SessionManager !== 'undefined') {
+                    // SessionManager creates the sophisticated UI dynamically (matches OK.html structure)
+                    if (window.sessionManager && window.sessionManager.toggleSessions) {
+                        window.sessionManager.toggleSessions();
+                        updateStatus('Session management interface loaded successfully.', 'success');
+                    } else {
+                        console.warn('[DEBUG] SessionManager class available but instance not ready, creating one...');
+                        window.sessionManager = new SessionManager();
+                        // Give it a moment to initialize
+                        setTimeout(() => {
+                            if (window.sessionManager && window.sessionManager.toggleSessions) {
+                                window.sessionManager.toggleSessions();
+                                updateStatus('Session management interface loaded successfully.', 'success');
+                            } else {
+                                console.error('[DEBUG] Failed to initialize SessionManager');
+                                updateStatus('Failed to load session management interface.', 'error');
+                                showWelcomePage();
+                            }
+                        }, 200);
+                    }
+                } else {
+                    console.error('[DEBUG] SessionManager not available, falling back to basic ChatHistoryManager');
+                    // Fallback to old method if SessionManager unavailable
+                    await showChatHistoryUI();
+                    updateStatus('Basic chat history loaded.', 'info');
+                }
             }, 1000);
         });
-        console.log('[DEBUG] Chat History button event listener attached');
+        console.log('[DEBUG] Chat History (Session Manager) button event listener attached');
     } else {
         console.error('[DEBUG] Chat History button not found!');
     }
 
-    // Initialize theme system
-    async function initializeThemeSystem() {
-        try {
-            await loadAvailableThemes();
-            await loadCurrentTheme();
-            console.log('Theme system initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize theme system:', error);
-        }
-    }
+    // Session Manager UI is now handled by the Chat History button and session-manager.js
+    // The sessions functionality is integrated into the chat history interface
+    console.log('[DEBUG] Session management integrated into Chat History UI - no separate sessions button needed');
 
-    // Initialize theme system and other components
-    initializeThemeSystem();
+    // Initialize dynamic workflow loading from configuration
+    initializeDynamicWorkflows();
 
-    // Initialize session recovery on page load
-    initializeSessionRecovery();
+
 
     // Initial state - Show welcome page by default (will be overridden if session recovery finds something)
     showWelcomePage();
-    document.getElementById('adapted-content').style.display = 'block';
-    document.getElementById('ported-content').style.display = 'block';
+    document.getElementById('dynamic-workflows-content').style.display = 'block';
     lastWidth = leftPanel.getBoundingClientRect().width;
 });

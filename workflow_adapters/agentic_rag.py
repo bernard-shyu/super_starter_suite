@@ -1,24 +1,36 @@
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from typing import Dict, Any
 import time
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import validate_workflow_payload, create_error_response, log_workflow_execution
+from super_starter_suite.shared.workflow_utils import (
+    validate_workflow_payload,
+    create_error_response,
+    log_workflow_execution,
+    execute_agentic_workflow
+)
+from super_starter_suite.shared.workflow_loader import get_workflow_config
 from super_starter_suite.shared.dto import MessageRole, create_chat_message
 from llama_index.core.agent.workflow.workflow_events import AgentWorkflowStartEvent
 from llama_index.server.models.chat import ChatAPIMessage, ChatRequest
 from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
 
 # UNIFIED LOGGING SYSTEM
-adapter_logger = config_manager.get_logger("workflow")
+logger = config_manager.get_logger("workflow.bzlogic")
 router = APIRouter()
 
+# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
+workflow_ID = "A_agentic_rag"
+
+# Load config for derived naming (no hard-coded text beyond workflow_ID)
+workflow_config = get_workflow_config(workflow_ID)
+# Validation happens in workflow_loader.py - assume config is correct
+
 @router.post("/chat")
-@bind_workflow_session("agentic-rag")  # CRITICAL: Must come AFTER @router.post()
-# This provides complete chat session management (user config + persistent sessions)
-# No manual session management needed - decorator handles everything
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLResponse:
+@bind_workflow_session(workflow_config)  # Single param decorator # CRITICAL: Must come AFTER @router.post()
+# Unified decorator with configuration-driven behavior flags
+async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
     """
     Endpoint to handle chat requests for the Agentic RAG workflow.
 
@@ -36,8 +48,8 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLRespon
         # Validate request payload using shared utility
         is_valid, error_msg = validate_workflow_payload(payload)
         if not is_valid:
-            error_html, status_code = create_error_response(error_msg, "Agentic RAG", 400)
-            return HTMLResponse(content=error_html, status_code=status_code)
+            error_data = {"error": error_msg, "artifacts": None}
+            return JSONResponse(content=error_data, status_code=400)
 
         # Extract user message (already added to session by decorator)
         user_message = payload["question"]
@@ -48,44 +60,24 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLRespon
         session = request.state.chat_session
         chat_memory = request.state.chat_memory
 
-        adapter_logger.debug(f"Workflow endpoint ready: Session {session.session_id} with {len(session.messages)} messages")
-
-        # Import workflow late (avoid circular dependency)
+        # Get workflow context (decorator provides session, chat memory, etc.)
         from super_starter_suite.STARTER_TOOLS.agentic_rag.app.workflow import create_workflow
 
-        # Create ChatRequest object for user context
-        chat_request = ChatRequest(
-            id=request.state.user_id,
-            messages=[ChatAPIMessage(role=LlamaMessageRole.USER, content=user_message)],
+        # Execute AgentWorkflow using shared utilities (replaces inline AgentWorkflowStartEvent handling)
+        response_data = await execute_agentic_workflow(
+            workflow_factory=create_workflow,
+            workflow_config=workflow_config,
+            user_message=user_message,
+            user_config=user_config,
+            chat_manager=chat_manager,
+            session=session,
+            chat_memory=chat_memory,
+            logger=logger
         )
-
-        # Create workflow start event with chat memory
-        start_event = AgentWorkflowStartEvent(
-            user_msg=user_message,
-            chat_history=None,
-            memory=chat_memory,
-            max_iterations=None
-        )
-
-        # Execute workflow
-        workflow = create_workflow(chat_request=chat_request)
-        result = await workflow.run(start_event=start_event)
-        adapter_logger.debug(f"Workflow completed successfully: {result}")
-
-        # Extract response content
-        response_content = str(result) if result else "No response generated"
-
-        # Save assistant response to session (decorator-prepared chat_manager handles persistence)
-        assistant_msg = create_chat_message(role=MessageRole.ASSISTANT, content=response_content)
-        chat_manager.add_message_to_session(session, assistant_msg)
-        adapter_logger.debug(f"Saved assistant response to session {session.session_id}")
-
-        # Format response with session ID for frontend tracking
-        response_html = f"<div data-session-id='{session.session_id}'><p>{response_content}</p></div>"
 
         # Log successful execution
         log_workflow_execution("Agentic RAG", user_message, True, (time.time() - start_time))
-        return HTMLResponse(content=response_html, status_code=status.HTTP_200_OK)
+        return JSONResponse(content=response_data, status_code=status.HTTP_200_OK)
 
     except HTTPException:
         raise
@@ -93,7 +85,7 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLRespon
         # Log error and return formatted response
         duration = time.time() - start_time
         log_workflow_execution("Agentic RAG", payload.get("question", "unknown"), False, duration)
-        adapter_logger.error(f"Agentic RAG workflow error: {str(e)}", exc_info=True)
+        logger.error(f"Agentic RAG workflow error: {str(e)}", exc_info=True)
 
-        error_html, status_code = create_error_response(f"Unexpected error: {str(e)}", "Agentic RAG")
-        return HTMLResponse(content=error_html, status_code=status_code)
+        error_data = {"error": f"Unexpected error: {str(e)}", "artifacts": None}
+        return JSONResponse(content=error_data, status_code=500)

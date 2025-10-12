@@ -1,100 +1,149 @@
+"""
+COMPLETE Pattern C: Agentic RAG Workflow Porting
+
+STEP-wise Implementation:
+1. Reimplement complete business logic from STARTER_TOOLS
+2. Integrate with FastAPI server framework
+3. Implement APPROACH E artifact extraction
+4. Add session persistence and error handling
+5. Complete testing and validation
+
+Pattern C means FORBIDDEN to import from STARTER_TOOLS directory.
+All business logic must be reimplemented locally in this file.
+"""
+
 from fastapi import APIRouter, Request, HTTPException, status
-from fastapi.responses import HTMLResponse
-from typing import Dict, Any
-from super_starter_suite.shared.decorators import bind_workflow_session_porting
-from super_starter_suite.shared.workflow_utils import validate_workflow_payload, create_error_response, log_workflow_execution
+from fastapi.responses import JSONResponse
+from typing import Dict, Any, Optional
+from super_starter_suite.shared.decorators import bind_workflow_session
+from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
 from super_starter_suite.shared.dto import MessageRole, create_chat_message
-from super_starter_suite.STARTER_TOOLS.agentic_rag.app.workflow import create_workflow
-from llama_index.core.agent.workflow.workflow_events import AgentWorkflowStartEvent
-from llama_index.server.models.chat import ChatAPIMessage, ChatRequest
+
+# COMPLETE Pattern C: No imports from STARTER_TOOLS - full AgentWorkflow reimplementation
+from llama_index.core.agent.workflow import AgentWorkflow
+from llama_index.server.api.models import ChatAPIMessage, ChatRequest, Artifact, ArtifactEvent
 from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
+from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
+from llama_index.server.tools.index import get_query_engine_tool
+from llama_index.server.tools.index.citation import enable_citation, CITATION_SYSTEM_PROMPT
+from llama_index.core.settings import Settings
+
 import time
 from super_starter_suite.shared.config_manager import config_manager
+from super_starter_suite.shared.workflow_loader import get_workflow_config
 
-# UNIFIED LOGGING SYSTEM
-porting_logger = config_manager.get_logger("workflow")
+logger = config_manager.get_logger("workflow.ported.agentic_rag")
 router = APIRouter()
 
+# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
+workflow_ID = "P_agentic_rag"
+
+# Load config for derived naming (no hard-coded text beyond workflow_ID)
+workflow_config = get_workflow_config(workflow_ID)
+# Validation happens in workflow_loader.py - assume config is correct
+
+# ====================================================================================
+# STEP 1-2: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C)
+# ====================================================================================
+
+def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds: float = 90.0) -> AgentWorkflow:
+    """
+    Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
+
+    - Load index configuration locally using ChatRequest from adapter execution
+    - Initialize agentic RAG workflow with citation-enabled query tools
+    - Handle missing dependencies gracefully
+    - Follow timeout handling pattern from STARTER_TOOLS/agentic_rag/app/workflow.py
+    """
+    try:
+        # Adapter execution provides proper ChatRequest - no more None handling needed
+        from super_starter_suite.shared.index_utils import get_index
+        index = get_index(chat_request=chat_request)
+
+        if index is None:
+            logger.error("Pattern C: Index not found - ensure knowledge base is properly configured")
+            raise ValueError("Index is not available. Please run setup scripts or check configuration.")
+
+        # Create a query tool with citations enabled (reimplementation of STARTER_TOOLS logic)
+        query_tool = enable_citation(get_query_engine_tool(index=index))
+
+        # Define the system prompt for the agent (reimplementation)
+        # Append the citation system prompt to the system prompt
+        system_prompt = """You are a helpful assistant"""
+        system_prompt += CITATION_SYSTEM_PROMPT
+
+        logger.debug("Pattern C: Successfully initialized AgentWorkflow with citation-enabled query tools")
+        # Create AgentWorkflow using the reimplemented logic with configurable timeout
+        workflow = AgentWorkflow.from_tools_or_functions(
+            tools_or_functions=[query_tool],
+            llm=Settings.llm,
+            system_prompt=system_prompt,
+            timeout=timeout_seconds  # Use configurable timeout instead of hardcoded
+        )
+
+        return workflow
+
+    except ImportError as e:
+        logger.error(f"Pattern C: Missing required dependencies: {e}")
+        raise ValueError("Index utilities not available. Check if required packages are installed.")
+
+    except Exception as e:
+        logger.error(f"Pattern C: AgentWorkflow initialization failed: {e}")
+        raise ValueError(f"Failed to create agentic RAG workflow: {str(e)}")
+
+# ====================================================================================
+# STEP 4-5-6: COMPLETE SERVER ENDPOINT WITH APPROACH E ARTIFACT EXTRACTION (PATTERN C)
+# ====================================================================================
+# ====================================================================================
+# STEP 4: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
+# ====================================================================================
+
+# Thin factory function (belongs in this file with workflow logic)
+def create_agentic_rag_workflow_factory(chat_request: Optional[ChatRequest] = None):
+    """Thin factory that returns workflow instance using local implementation"""
+    return create_workflow(chat_request)
+
 @router.post("/chat")
-@bind_workflow_session_porting("agentic-rag")  # CRITICAL: Must come AFTER @router.post()
-# Provides complete chat session management for porting workflows
-# Handles user context + persistent sessions + message management
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> HTMLResponse:
+@bind_workflow_session(workflow_config)
+async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
     """
-    Endpoint to handle chat requests for the ported Agentic RAG workflow.
+    PORTED AgentWorkflow endpoint using ADAPTER pattern for consistency.
 
-    The @bind_workflow_session_porting("agentic-rag") decorator provides:
-    - User context initialization and LLM setup
-    - Persistent chat session management (one session per workflow)
-    - Automatic user message addition to session
-    - Chat memory preparation for workflow context
-
-    This endpoint focuses solely on workflow execution and response handling.
+    AgentWorkflows should use execute_agentic_workflow pattern
+    like A_agentic_rag adapter does.
     """
-    start_time = time.time()
+    import time
+    from super_starter_suite.shared.workflow_utils import execute_agentic_workflow, validate_workflow_payload
+
+    execution_start = time.time()
 
     try:
-        # Validate request payload using shared utility
+        # Validation & session setup
         is_valid, error_msg = validate_workflow_payload(payload)
         if not is_valid:
-            error_html, status_code = create_error_response(error_msg, "Agentic RAG", 400)
-            return HTMLResponse(content=error_html, status_code=status_code)
+            return JSONResponse({"error": error_msg, "artifacts": None}, status_code=400)
 
-        # Extract user message (already added to session by decorator)
         user_message = payload["question"]
-
-        # Get session and context prepared by decorator
-        user_config = request.state.user_config
-        chat_manager = request.state.chat_manager
         session = request.state.chat_session
         chat_memory = request.state.chat_memory
+        chat_manager = request.state.chat_manager
+        user_config = request.state.user_config
 
-        porting_logger.debug(f"Workflow endpoint ready: Session {session.session_id} with {len(session.messages)} messages")
-
-        # Create ChatRequest object for user context
-        chat_request = ChatRequest(
-            id=request.state.user_id,
-            messages=[ChatAPIMessage(role=LlamaMessageRole.USER, content=user_message)],
+        # Use ADAPTER PATTERN: execute_agentic_workflow for consistency
+        response_data = await execute_agentic_workflow(
+            workflow_factory=create_workflow,
+            workflow_config=workflow_config,
+            user_message=user_message,
+            user_config=user_config,
+            chat_manager=chat_manager,
+            session=session,
+            chat_memory=chat_memory,
+            logger=logger
         )
 
-        # Create workflow start event with chat memory
-        start_event = AgentWorkflowStartEvent(
-            user_msg=user_message,
-            chat_history=None,
-            memory=chat_memory,
-            max_iterations=None
-        )
+        return JSONResponse(content=response_data)
 
-        # Execute workflow
-        workflow = create_workflow(chat_request=chat_request)
-        result = await workflow.run(start_event=start_event)
-        porting_logger.debug(f"Workflow completed successfully: {result}")
-
-        # Extract response content (porting-specific result handling)
-        if hasattr(result, 'response') and result.response:
-            response_content = str(result.response.content)
-        else:
-            response_content = str(result) if result else "Agentic RAG workflow completed successfully"
-
-        # Save assistant response to session (decorator-prepared chat_manager handles persistence)
-        assistant_msg = create_chat_message(role=MessageRole.ASSISTANT, content=response_content)
-        chat_manager.add_message_to_session(session, assistant_msg)
-        porting_logger.debug(f"Saved assistant response to session {session.session_id}")
-
-        # Format response (porting uses plain paragraph format)
-        response_html = f"<p>{response_content}</p>"
-
-        # Log successful execution
-        log_workflow_execution("Agentic RAG", user_message, True, (time.time() - start_time))
-        return HTMLResponse(content=response_html, status_code=status.HTTP_200_OK)
-
-    except HTTPException:
-        raise
     except Exception as e:
-        # Log error and return formatted response
-        duration = time.time() - start_time
-        log_workflow_execution("Agentic RAG", payload.get("question", "unknown"), False, duration)
-        porting_logger.error(f"Agentic RAG workflow error: {str(e)}", exc_info=True)
-
-        error_html, status_code = create_error_response(f"Unexpected error: {str(e)}", "Agentic RAG")
-        return HTMLResponse(content=error_html, status_code=status_code)
+        error_msg = f"AgentWorkflow failed: {str(e)}"
+        logger.error(error_msg)
+        return JSONResponse({"error": error_msg, "artifacts": None}, status_code=500)

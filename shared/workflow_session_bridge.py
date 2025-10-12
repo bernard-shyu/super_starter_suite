@@ -13,7 +13,7 @@ Provides:
 """
 
 from typing import Optional, Dict, Any
-from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager
+from super_starter_suite.chat_bot.chat_history.chat_history_manager import ChatHistoryManager
 from super_starter_suite.shared.dto import MessageRole, create_chat_message
 from super_starter_suite.shared.config_manager import UserConfig, config_manager
 
@@ -21,7 +21,7 @@ from super_starter_suite.shared.config_manager import UserConfig, config_manager
 from llama_index.core.memory import ChatMemoryBuffer
 
 # UNIFIED LOGGING SYSTEM
-bridge_logger = config_manager.get_logger("workflow")
+bridge_logger = config_manager.get_logger("workflow.utils")
 
 
 class WorkflowSessionBridge:
@@ -58,22 +58,67 @@ class WorkflowSessionBridge:
         """
         try:
             chat_manager = ChatHistoryManager(user_config)
+            user_id = getattr(user_config, 'user_id', 'Default')
 
-            # ALWAYS create/load session - no conditional logic
-            if session_id is not None:
-                # Load existing session if session_id provided
+            bridge_logger.debug(f"Setting up session for {workflow_name}")
+
+            session = None
+            is_new_session = False
+
+            if session_id is not None and session_id != "new":
+                # CRITICAL FIX: Load specific session if session_id provided and not 'new'
+                # RESUME BEHAVIOR: Must load the requested session, not the active one
+                bridge_logger.debug(f"Loading specific session {session_id} for workflow {workflow_name}")
                 session = chat_manager.load_session(workflow_name, session_id)
-            else:
-                session = None
 
-            if not session:
-                session = chat_manager.create_new_session(workflow_name)
-                if session_id is None:
-                    bridge_logger.debug(f"Created new session {session.session_id} for workflow {workflow_name}")
+                if session:
+                    bridge_logger.debug(f"Successfully loaded session {session_id} for workflow {workflow_name}")
+                    is_new_session = False
                 else:
-                    bridge_logger.debug(f"Session {session_id} not found, created new session {session.session_id} for workflow {workflow_name}")
+                    bridge_logger.warning(f"Session {session_id} not found in {workflow_name}, creating new session")
+                    session = chat_manager.create_new_session(workflow_name)
+                    is_new_session = True
+            else:
+                # NEW SESSION BEHAVIOR: When session_id is None or "new", find or create the active session for this workflow
+                # This ensures ONE ACTIVE SESSION per workflow policy for spontaneous/continuing conversations
+                from super_starter_suite.chat_bot.chat_history.chat_history_manager import SessionLifecycleManager
+
+                session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
+                active_session_id = session_lifecycle.get_active_session_id(workflow_name)
+
+                if active_session_id:
+                    # Use existing active session
+                    session = chat_manager.load_session(workflow_name, active_session_id)
+                    if session:
+                        bridge_logger.debug(f"Using existing active session {active_session_id} for {workflow_name}")
+                        is_new_session = False
+                    else:
+                        # Active session mapping exists but session file is missing - create new one
+                        bridge_logger.warning(f"Active session {active_session_id} file missing for {workflow_name}, creating new session")
+                        session = chat_manager.create_new_session(workflow_name)
+                        # Update the lifecycle mapping with the new session
+                        session_lifecycle.workflow_sessions[workflow_name] = session.session_id
+                        session_lifecycle._save_mappings()
+                        is_new_session = True
+                else:
+                    # No active session - create new one and make it active
+                    session = chat_manager.create_new_session(workflow_name)
+                    session_lifecycle.workflow_sessions[workflow_name] = session.session_id
+                    session_lifecycle._save_mappings()
+                    bridge_logger.debug(f"Created new active session {session.session_id} for workflow {workflow_name}")
+                    is_new_session = True
+
+            # REGISTER SESSION WITH SessionAuthority FOR FRONTEND COORDINATION
+            # This ensures SessionAuthority knows about sessions created by WorkflowSessionBridge
+            # So frontend can get active session ID via /api/workflow_sessions/{workflow}/id
+            user_id = getattr(user_config, 'user_id', 'Default')
+            # Import locally to avoid circular import
+            from super_starter_suite.chat_bot.session_authority import session_authority
+            session_authority.registry.register_session(user_id, workflow_name, session.session_id)
+            bridge_logger.debug(f"Registered session {session.session_id[:8]}... with SessionAuthority for {workflow_name}")
 
             # Always get memory for conversation context
+            # Note: Each session gets its own memory object, so no sharing across sessions
             memory = chat_manager.get_llama_index_memory(session)
 
             return {
@@ -120,6 +165,72 @@ class WorkflowSessionBridge:
         except Exception as e:
             bridge_logger.error(f"Failed to save chat exchange for workflow {workflow_name}: {e}")
             raise
+
+    @staticmethod
+    def get_existing_session(workflow_name: str, user_config: UserConfig, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get existing session without creating new one (DECORATOR USE ONLY)
+
+        This method retrieves an existing session that was created by ensure_chat_session().
+        Used by decorators to reuse sessions created by executor endpoints.
+
+        CRITICAL SECURITY: Validates session belongs to current user to prevent cross-contamination.
+
+        Args:
+            workflow_name: Name of the workflow
+            user_config: UserConfig instance
+            session_id: Session ID to retrieve (if known), or None to find active session
+
+        Returns:
+            session_data dict or None if session not found or access denied
+        """
+        try:
+            chat_manager = ChatHistoryManager(user_config)
+            current_user_id = getattr(user_config, 'user_id', 'Default')
+
+            # If session_id provided, load specific session with ownership validation
+            if session_id:
+                session = chat_manager.load_session(workflow_name, session_id)
+                if session:
+                    # CRITICAL: Validate session ownership to prevent cross-contamination
+                    if session.user_id != current_user_id:
+                        bridge_logger.warning(f"Session {session_id} access denied: belongs to user '{session.user_id}' not '{current_user_id}'")
+                        return None
+
+                    memory = chat_manager.get_llama_index_memory(session)
+                    return {
+                        'session': session,
+                        'memory': memory,
+                        'is_existing': True
+                    }
+                return None
+
+            # Find active session for this workflow with ownership validation
+            from super_starter_suite.chat_bot.chat_history.chat_history_manager import SessionLifecycleManager
+
+            session_lifecycle = SessionLifecycleManager(current_user_id, chat_manager)
+            active_session_id = session_lifecycle.get_active_session_id(workflow_name)
+
+            if active_session_id:
+                session = chat_manager.load_session(workflow_name, active_session_id)
+                if session:
+                    # CRITICAL: Validate session ownership to prevent cross-contamination
+                    if session.user_id != current_user_id:
+                        bridge_logger.warning(f"Active session {active_session_id} access denied: belongs to user '{session.user_id}' not '{current_user_id}'")
+                        return None
+
+                    memory = chat_manager.get_llama_index_memory(session)
+                    return {
+                        'session': session,
+                        'memory': memory,
+                        'is_existing': True
+                    }
+
+            return None
+
+        except Exception as e:
+            bridge_logger.error(f"Failed to get existing session for {workflow_name}: {e}")
+            return None
 
     @staticmethod
     def get_session_info(workflow_name: str, user_config: UserConfig, session_id: str) -> Optional[Dict[str, Any]]:
@@ -182,6 +293,53 @@ class WorkflowSessionBridge:
         if memory and isinstance(memory, ChatMemoryBuffer):
             return memory
         return None
+
+    @staticmethod
+    def cleanup_memory(memory_object):
+        """
+        Explicit cleanup of chat memory objects to prevent CUDA memory leaks
+
+        Args:
+            memory_object: LlamaIndex ChatMemoryBuffer or similar memory object
+        """
+        if memory_object is not None:
+            try:
+                # Clear any cached data
+                if hasattr(memory_object, 'clear'):
+                    memory_object.clear()
+
+                # Force explicit cleanup if available
+                if hasattr(memory_object, 'cleanup'):
+                    memory_object.cleanup()
+
+                # Delete the object reference to free GPU memory
+                del memory_object
+
+                bridge_logger.debug("Memory object cleaned up successfully")
+
+            except Exception as e:
+                bridge_logger.warning(f"Failed to cleanup memory object: {e}")
+
+    @staticmethod
+    def cleanup_session_workflow(workflow_name: str, user_config: UserConfig, session_data: Dict[str, Any]):
+        """
+        Cleanup workflow session memory when workflow execution ends
+
+        Should be called after workflow completes to prevent CUDA memory leaks.
+
+        Args:
+            workflow_name: Name of the workflow
+            user_config: UserConfig instance
+            session_data: Session data dict from ensure_chat_session()
+        """
+        try:
+            memory_object = session_data.get('memory')
+            if memory_object:
+                WorkflowSessionBridge.cleanup_memory(memory_object)
+                bridge_logger.debug(f"Cleaned up session memory for workflow {workflow_name}")
+
+        except Exception as e:
+            bridge_logger.error(f"Failed to cleanup session for workflow {workflow_name}: {e}")
 
 
 class UnifiedWorkflowMixin:

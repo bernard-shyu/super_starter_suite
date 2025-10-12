@@ -40,7 +40,7 @@ RAG index generation is executed as a background task, preventing UI blocking an
 ### Implementation Details
 
 #### 1. UI Structure Modifications
-- Add chat container to the right panel
+- Add chat container to the Content panel
 - Include message display area and input field
 - Keep existing left panel for workflow selection
 

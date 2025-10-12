@@ -15,8 +15,6 @@ import json
 import os
 from pathlib import Path
 
-# Import for filesystem operations
-from super_starter_suite.shared.index_utils import calculate_storage_hash
 from super_starter_suite.shared.config_manager import config_manager
 
 # Get logger for StatusData operations
@@ -163,6 +161,8 @@ class StatusData:
 
     def update_storage_status(self, storage_info: Dict[str, Any]) -> bool:
         """Control Point: Update storage status information"""
+        from super_starter_suite.shared.index_utils import calculate_storage_hash
+
         if not self._validated:
             return False
 
@@ -504,7 +504,7 @@ class ChatSession:
     """
     session_id: str
     user_id: str
-    workflow_type: str
+    workflow_name: str  # Workflow identifier (e.g., "A_agentic_rag")
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     title: str = ""
@@ -517,8 +517,8 @@ class ChatSession:
 
     def validate(self) -> bool:
         """Control Point: Validate session data"""
-        if (self.session_id and self.user_id and self.workflow_type and
-            len(self.session_id) > 0 and len(self.user_id) > 0 and len(self.workflow_type) > 0):
+        if (self.session_id and self.user_id and self.workflow_name and
+            len(self.session_id) > 0 and len(self.user_id) > 0 and len(self.workflow_name) > 0):
             self._validated = True
             return True
         return False
@@ -549,7 +549,7 @@ class ChatSession:
         return {
             "session_id": self.session_id,
             "user_id": self.user_id,
-            "workflow_type": self.workflow_type,
+            "workflow_name": self.workflow_name,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "title": self.title,
@@ -563,7 +563,7 @@ class ChatSession:
         return cls(
             session_id=data["session_id"],
             user_id=data["user_id"],
-            workflow_type=data["workflow_type"],
+            workflow_name=data["workflow_name"],  # Must use correct field name
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
             title=data.get("title", ""),
@@ -611,7 +611,7 @@ class ChatHistoryConfig:
 # Factory functions for chat history DTOs
 def create_chat_session(
     user_id: str,
-    workflow_type: str,
+    workflow_name: str,
     session_id: Optional[str] = None,
     title: str = "",
     **kwargs
@@ -625,14 +625,14 @@ def create_chat_session(
     session = ChatSession(
         session_id=session_id,
         user_id=user_id,
-        workflow_type=workflow_type,
+        workflow_name=workflow_name,
         title=title,
         **kwargs
     )
 
     # Control Point: Always validate on creation
     if not session.validate():
-        raise ValueError(f"Invalid chat session: user_id={user_id}, workflow_type={workflow_type}")
+        raise ValueError(f"Invalid chat session: user_id={user_id}, workflow_name={workflow_name}")
 
     return session
 
@@ -662,9 +662,62 @@ def create_chat_message(
 CHAT_SESSION_TEMPLATE = ChatSession(
     session_id="template",
     user_id="template",
-    workflow_type="template"
+    workflow_name="template"
 )
 CHAT_MESSAGE_TEMPLATE = ChatMessageDTO(
     role=MessageRole.USER,
     content="template message"
 )
+
+# ------------------------------------------------------------------
+# Workflow Management DTOs
+# ------------------------------------------------------------------
+
+@dataclass
+class WorkflowConfig:
+    """
+    Configuration for a workflow definition.
+
+    PHASE 5.6A: Enhanced with artifact behavior flags for unified decorator and ChatHistoryManager.
+    PHASE 5.6D: Extended with derived properties for unified workflow naming.
+
+    Encapsulates the metadata and settings required for a pluggable workflow,
+    supporting dynamic loading and registration across the system.
+
+    Derived Properties (computed from code_path):
+    - workflow_code: "code_generator" from "workflow_adapters.code_generator"
+    - workflow_hyphenated: "code-generator" from workflow_code
+    - workflow_ID: Expected workflow ID pattern (must be defined in workflow files)
+    """
+    code_path: str          # Python import path (e.g., "workflow_adapters.agentic_rag")
+    timeout: float         # Execution timeout in seconds
+    display_name: str      # User-friendly name for UI display
+    description: Optional[str] = None  # Optional description for the workflow
+    icon: Optional[str] = None  # Optional emoji or icon for UI display
+
+    # PHASE 5.6A: Enhanced artifact behavior flags
+    workflow_type: Optional[str] = "adapted"       # "adapted", "ported", "meta"
+    response_format: Optional[str] = "json"        # "json", "html"
+    artifact_enabled: Optional[bool] = False       # True to enable artifact extraction
+    chat_history_context: Optional[bool] = True    # True to maintain conversation history
+    synthetic_response: Optional[str] = None       # Template for synthetic responses from artifacts
+
+    # PHASE 5.6D: Added workflow_ID to support Session Management Single Responsibility
+    workflow_ID: Optional[str] = None  # Raw workflow ID key from TOML config (e.g., "A_agentic_rag")
+
+    @property
+    def workflow_code(self) -> str:
+        """Derived: Get workflow code from code_path (e.g., 'code_generator' from 'workflow_adapters.code_generator')"""
+        # Extract the last part after the last dot
+        return self.code_path.split('.')[-1] if '.' in self.code_path else self.code_path
+
+@dataclass
+class WorkflowDefinition:
+    """
+    Definition of a workflow instance.
+
+    Combines the workflow identifier with its configuration for system-wide
+    workflow management and dynamic loading.
+    """
+    id: str                     # Workflow identifier (e.g., "A_agentic_rag")
+    config: WorkflowConfig     # Associated configuration

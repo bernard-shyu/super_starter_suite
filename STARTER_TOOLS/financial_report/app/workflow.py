@@ -30,7 +30,7 @@ from llama_index.server.utils.agent_tool import (
 )
 
 
-def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
+def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds: float = 300.0) -> Workflow:
     index = get_index(chat_request=chat_request)
     if index is None:
         raise ValueError(
@@ -51,7 +51,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
         query_engine_tool=query_engine_tool,
         code_interpreter_tool=code_interpreter_tool,
         document_generator_tool=document_generator_tool,
-        timeout=300.0     # default: 180 seconds
+        timeout=timeout_seconds  # Use configurable timeout instead of hardcoded
     )
 
 

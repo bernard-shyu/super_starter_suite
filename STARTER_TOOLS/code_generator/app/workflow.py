@@ -31,11 +31,11 @@ try:
 except ImportError:
     from shared.llama_utils import load_llm
 
-def create_workflow(chat_request: ChatRequest) -> Workflow:
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 240.0) -> Workflow:
     workflow = CodeArtifactWorkflow(
         llm=Settings.llm,  # llm=OpenAI(model="gpt-4.1"),
         chat_request=chat_request,
-        timeout=240.0     # default: 120 seconds
+        timeout=timeout_seconds  # Use configurable timeout instead of hardcoded
     )
     return workflow
 

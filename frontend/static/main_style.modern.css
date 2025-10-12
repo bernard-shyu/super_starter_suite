@@ -96,7 +96,7 @@ body {
 }
 
 .left-panel {
-    width: 250px;
+    width: 370px;
     background-color: var(--theme-left-panel-bg);
     color: var(--theme-left-panel-text);
     padding: 15px;
@@ -294,7 +294,7 @@ body {
     50% { opacity: 0.5; }
 }
 
-.right-panel {
+.content-panel {
     flex-grow: 1;
     padding: 20px;
     overflow-y: auto;

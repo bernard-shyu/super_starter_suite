@@ -15,58 +15,31 @@ import json
 import hashlib
 from datetime import datetime
 
-# Add the parent directory of the current project to sys.path.
-# This allows Python to find the current project directory (e.g., 'github.super_starter')
-# as a top-level package.
-current_file_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_file_dir)
+# Add the current project's root directory to sys.path to enable local imports
+# This ensures that imports like 'from super_starter_suite.shared.config_manager'
+# correctly resolve to the 'super_starter_suite' package within this project.
+# Assuming main.py is in super_starter_suite/main.py and project root is super_starter_suite/
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Ensure the parent directory is at the beginning of sys.path for local module priority
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Ensure the project root is at the beginning of sys.path for local module priority
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Dynamically rename the current project's module in sys.modules.
-# This makes Python treat the current directory (e.g., 'github.super_starter')
-# as if it were named 'super_starter_suite' for import purposes.
-# This is crucial for portability when the project is cloned into different directories.
-current_project_name = os.path.basename(current_file_dir)
-if current_project_name != "super_starter_suite":
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("super_starter_suite", os.path.join(current_file_dir, "__init__.py"))
-    if spec:
-        super_starter_suite_module = importlib.util.module_from_spec(spec)
-        sys.modules["super_starter_suite"] = super_starter_suite_module
-        # Also ensure the actual module (e.g., github.super_starter) is loaded
-        # and its submodules are correctly mapped.
-        # This is a complex operation, a simpler approach is to ensure
-        # the parent directory is on path and imports are relative or absolute
-        # from the *intended* package name.
-
-# The project's internal package name is 'super_starter_suite'.
-# All imports should consistently use this name.
+# Now we can import from the super_starter_suite package
 from super_starter_suite.shared.config_manager import config_manager, UserConfig
+from super_starter_suite.shared.workflow_loader import get_all_workflow_configs, load_all_workflows
 
 # Initialize event system for clean IPC architecture
 from super_starter_suite.rag_indexing.event_system import initialize_event_system
 _event_emitter = initialize_event_system(config_manager)
 
+# Initialize SessionAuthority singleton (SINGLE SOURCE OF TRUTH for all session management)
+from super_starter_suite.chat_bot.session_authority import session_authority as _session_authority_singleton
+# Force singleton initialization on startup
+_session_authority = _session_authority_singleton
+
 # Get logger for main application
 main_logger = config_manager.get_logger("main")
-
-# Import workflow routers
-from super_starter_suite.workflow_adapters.agentic_rag import router as agentic_rag_adapter_router
-from super_starter_suite.workflow_adapters.code_generator import router as code_generator_adapter_router
-from super_starter_suite.workflow_adapters.deep_research import router as deep_research_adapter_router
-from super_starter_suite.workflow_adapters.document_generator import router as document_generator_adapter_router
-from super_starter_suite.workflow_adapters.financial_report import router as financial_report_adapter_router
-from super_starter_suite.workflow_adapters.human_in_the_loop import router as human_in_the_loop_adapter_router
-
-from super_starter_suite.workflow_porting.agentic_rag import router as agentic_rag_porting_router
-from super_starter_suite.workflow_porting.code_generator import router as code_generator_porting_router
-from super_starter_suite.workflow_porting.deep_research import router as deep_research_porting_router
-from super_starter_suite.workflow_porting.document_generator import router as document_generator_porting_router
-from super_starter_suite.workflow_porting.financial_report import router as financial_report_porting_router
-from super_starter_suite.workflow_porting.human_in_the_loop import router as human_in_the_loop_porting_router
 
 from pathlib import Path
 
@@ -215,19 +188,21 @@ else:
     main_logger.warning("[STARTUP] WARNING: WebSocket router not available - skipping inclusion")
 
 # --- Workflow Endpoints (mounted via APIRouter) ---
-app.include_router(agentic_rag_adapter_router,        prefix="/api/adapted/agentic-rag",        tags=["Agentic RAG"])
-app.include_router(code_generator_adapter_router,     prefix="/api/adapted/code-generator",     tags=["Code Generator"])
-app.include_router(deep_research_adapter_router,      prefix="/api/adapted/deep-research",      tags=["Deep Research"])
-app.include_router(document_generator_adapter_router, prefix="/api/adapted/document-generator", tags=["Document Generator"])
-app.include_router(financial_report_adapter_router,   prefix="/api/adapted/financial-report",   tags=["Financial Report"])
-app.include_router(human_in_the_loop_adapter_router,  prefix="/api/adapted/human-in-the-loop",  tags=["Human in the Loop"])
+# Dynamically load and include workflow routers
+workflow_configs = get_all_workflow_configs()
+loaded_workflows = load_all_workflows()
 
-app.include_router(agentic_rag_porting_router,        prefix="/api/ported/agentic-rag",        tags=["Agentic RAG Porting"])
-app.include_router(code_generator_porting_router,     prefix="/api/ported/code-generator",     tags=["Code Generator Porting"])
-app.include_router(deep_research_porting_router,      prefix="/api/ported/deep-research",      tags=["Deep Research Porting"])
-app.include_router(document_generator_porting_router, prefix="/api/ported/document-generator", tags=["Document Generator Porting"])
-app.include_router(financial_report_porting_router,   prefix="/api/ported/financial-report",   tags=["Financial Report Porting"])
-app.include_router(human_in_the_loop_porting_router,  prefix="/api/ported/human-in-the-loop",  tags=["Human in the Loop Porting"])
+for workflow_id, (router, _, _, _) in loaded_workflows.items():
+    workflow_config = workflow_configs.get(workflow_id)
+    if workflow_config:
+        prefix = f"/api/workflow/{workflow_id}"
+        # Ensure tags is a list of strings, as expected by FastAPI
+        tags = [workflow_config.display_name]
+        
+        app.include_router(router, prefix=prefix, tags=tags)
+        main_logger.debug(f"[STARTUP] Included router for workflow '{workflow_id}' at '{prefix}' with tags '{tags}'")
+    else:
+        main_logger.warning(f"Workflow configuration not found for '{workflow_id}'. Skipping router inclusion.")
 
 @app.get("/")
 async def read_root(request: Request):
@@ -281,7 +256,7 @@ async def update_current_theme(request: Request, theme_data: Dict[str, str]):
 # --- Chat History API Endpoints ---
 # Import and include chat history data CRUD endpoints
 try:
-    from super_starter_suite.chat_history.data_crud_endpoint import router as data_crud_router
+    from super_starter_suite.chat_bot.chat_history.data_crud_endpoint import router as data_crud_router
     main_logger.debug("[STARTUP] Chat history data CRUD router imported successfully")
 except Exception as e:
     main_logger.warning(f"[STARTUP] ERROR: Failed to import chat history data CRUD router: {e}")
@@ -296,29 +271,84 @@ else:
     main_logger.warning("[STARTUP] WARNING: Chat history data CRUD router not available - skipping inclusion")
 
 # --- Session Management Imports ---
-from super_starter_suite.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
+from super_starter_suite.chat_bot.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
 
 # Session lifecycle management endpoint
 @bind_user_context
+@app.get("/api/workflows")
+async def get_available_workflows(request: Request):
+    """Get list of available workflows with their metadata."""
+    try:
+        workflow_configs = get_all_workflow_configs()
+
+        workflows = []
+        for workflow_id, config in workflow_configs.items():
+            workflows.append({
+                "id": workflow_id,
+                "display_name": config.display_name,
+                "description": getattr(config, 'description', ''),
+                "icon": getattr(config, 'icon', '🤖'),
+                "timeout": getattr(config, 'timeout', 60.0),
+                "code_path": config.code_path
+            })
+
+        return {"workflows": workflows}
+    except Exception as e:
+        main_logger.error(f"Error retrieving workflow configurations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflows")
+
+@bind_user_context
 @app.get("/api/workflow_sessions/{workflow}/id")
 async def get_workflow_session_id(request: Request, workflow: str):
-    """Get or create a persistent session ID for a workflow."""
+    """Get existing active SESSION MAPPING for a workflow (SINGLE RESPONSIBILITY: ChatHistoryManager owns workflow_sessions.json)."""
     user_config = request.state.user_config
-    user_id = request.state.user_id
 
     try:
+        # SINGLE RESPONSIBILITY: ChatHistoryManager owns persistent workflow-to-session mappings
         chat_manager = ChatHistoryManager(user_config)
+        user_id = getattr(user_config, 'user_id', 'Default')
         session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
-        session_id = session_lifecycle.get_or_create_workflow_session(workflow)
 
-        return {"session_id": session_id}
+        # Get the ACTIVE SESSION ID from persistent workflow_sessions.json mapping
+        session_id = session_lifecycle.get_active_session_id(workflow)
+
+        if session_id:
+            # Verify the session still exists
+            session = chat_manager.load_session(workflow, session_id)
+            if session:
+                main_logger.debug(f"Returning active session {session_id[:8]} for {workflow} from workflow_sessions.json")
+                return {"session_id": session_id}
+            else:
+                # Session file missing - clean up the mapping
+                main_logger.warning(f"Active session {session_id} file missing for {workflow}, cleaning mapping")
+                if workflow in session_lifecycle.workflow_sessions:
+                    del session_lifecycle.workflow_sessions[workflow]
+                    session_lifecycle._save_mappings()
+
+        # No valid active session mapping found - try to find the most recent session and make it active
+        sessions = chat_manager.get_all_sessions(workflow)
+        if sessions and len(sessions) > 0:
+            latest_session = sessions[0]  # get_all_sessions returns sorted by updated_at desc
+            session_id = latest_session.session_id
+            main_logger.debug(f"Making latest session {session_id[:8]} active for {workflow}")
+
+            # UPDATE workflow_sessions.json with this active session
+            session_lifecycle.workflow_sessions[workflow] = session_id
+            session_lifecycle._save_mappings()
+
+            return {"session_id": session_id}
+
+        # No sessions exist for this workflow
+        main_logger.debug(f"No sessions found for {workflow}")
+        return {"session_id": None}
+
     except Exception as e:
         main_logger.error(f"Error getting session ID for workflow {workflow}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get session ID")
 
 # Import and include chat executor endpoints
 try:
-    from super_starter_suite.chat_history.executor_endpoint import router as executor_router
+    from super_starter_suite.chat_bot.workflow_execution.executor_endpoint import router as executor_router
     main_logger.debug("[STARTUP] Chat executor router imported successfully")
 except Exception as e:
     main_logger.warning(f"[STARTUP] ERROR: Failed to import chat executor router: {e}")
@@ -331,6 +361,22 @@ if executor_router is not None:
     main_logger.debug("[STARTUP] Chat executor router included successfully")
 else:
     main_logger.warning("[STARTUP] WARNING: Chat executor router not available - skipping inclusion")
+
+# Import and include human-in-the-loop (HITL) endpoint
+try:
+    from super_starter_suite.chat_bot.hitl_endpoint import router as hitl_router
+    main_logger.debug("[STARTUP] HITL endpoint router imported successfully")
+except Exception as e:
+    main_logger.warning(f"[STARTUP] ERROR: Failed to import HITL endpoint router: {e}")
+    import traceback
+    traceback.print_exc()
+    hitl_router = None
+
+if hitl_router is not None:
+    app.include_router(hitl_router, prefix="/api", tags=["Human-In-The-Loop"])
+    main_logger.debug("[STARTUP] HITL endpoint router included successfully")
+else:
+    main_logger.warning("[STARTUP] WARNING: HITL endpoint router not available - skipping inclusion")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
