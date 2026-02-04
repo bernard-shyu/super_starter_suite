@@ -45,38 +45,91 @@ def get_workflow_config(workflow_ID: str) -> WorkflowConfig:
 
 def get_all_workflow_configs() -> Dict[str, WorkflowConfig]:
     """
-    Get all workflow configurations from system configuration.
+    🎯 UNIFIED CONFIG LOADER: Get complete workflow configurations with all properties inlined.
+
+    No reference section lookups - returns complete config objects ready for use.
 
     Returns:
-        Dict[str, WorkflowConfig]: Dictionary mapping workflow IDs to config objects
+        Dict[str, WorkflowConfig]: Dictionary mapping workflow IDs to complete config objects
     """
     workflow_section = config_manager.system_config.get("WORKFLOW", {})
 
     workflow_configs: Dict[str, WorkflowConfig] = {}
     for workflow_id, config_dict in workflow_section.items():
         try:
-            # Create WorkflowConfig from the TOML dictionary
+            # 🎯 DIRECT INLINED CONFIGURATION - No reference lookups needed
             workflow_config = WorkflowConfig(
+                # 🎯 CORE WORKFLOW PROPERTIES
                 code_path=config_dict.get("code_path", ""),
                 timeout=config_dict.get("timeout", 60.0),
                 display_name=config_dict.get("display_name", workflow_id),
                 description=config_dict.get("description", None),
                 icon=config_dict.get("icon", None),
-                workflow_ID=workflow_id  # SINGLE RESPONSIBILITY: Store raw workflow ID for session management
+
+                # 🎯 INTEGRATION TYPE PROPERTIES
+                integrate_type=config_dict.get("integrate_type", "adapted"),
+                response_format=config_dict.get("response_format", "json"),
+
+                # 🎯 ARTIFACT CONFIGURATION
+                artifact_enabled=config_dict.get("artifact_enabled", False),
+                artifacts_enabled=config_dict.get("artifacts_enabled", False),
+                synthetic_response=config_dict.get("synthetic_response", None),
+
+                # 🎯 SESSION MANAGEMENT
+                chat_history_context=config_dict.get("chat_history_context", True),
+
+                # 🎯 WORKFLOW IDENTIFICATION
+                workflow_ID=workflow_id,  # SINGLE RESPONSIBILITY: Store raw workflow ID for session management
+
+                # 🎯 UNIFIED UI CONFIGURATION (directly inlined - no reference sections)
+                ui_component=config_dict.get("ui_component", None),
+
+                # 🎯 UNIFIED RENDERING FLAGS (directly inlined - no reference sections)
+                show_tool_calls=config_dict.get("show_tool_calls", False),
+                show_citation=config_dict.get("show_citation", "None"),
+                show_followup_questions=config_dict.get("show_followup_questions", False),
+                show_workflow_states=config_dict.get("show_workflow_states", False),
+
+                # 🎯 CLI WORKFLOW FEATURES
+                hie_enabled=config_dict.get("hie_enabled", False),
+
+                # 🎯 LLM BEHAVIOR FLAGS
+                force_text_structured_predict=config_dict.get("force_text_structured_predict", False)
             )
-            # Handle synthetic_response if present
-            if "synthetic_response" in config_dict:
-                workflow_config.synthetic_response = config_dict.get("synthetic_response")
 
             workflow_configs[workflow_id] = workflow_config
         except Exception as e:
-            logger.error(f"Error loading workflow config for '{workflow_id}': {e}")
+            logger.error(f"Error loading unified workflow config for '{workflow_id}': {e}")
             # Skip this workflow config if there's an error
             continue
 
-    logger.debug(f"Loaded {len(workflow_configs)} workflow configurations from TOML")
     return workflow_configs
 
+
+def get_ui_pattern_config(workflow_id: str) -> Optional[Dict]:
+    """
+    Get UI pattern configuration for a workflow.
+
+    Args:
+        workflow_id: The workflow identifier
+
+    Returns:
+        UI pattern configuration dictionary or None if not found
+    """
+    workflow_config = get_workflow_config(workflow_id)
+    ui_pattern_name = getattr(workflow_config, 'ui_pattern', None)
+
+    if not ui_pattern_name:
+        return None
+
+    ui_patterns = config_manager.system_config.get("WF_UI_PATTERN", {})
+    pattern_config = ui_patterns.get(ui_pattern_name)
+
+    if not pattern_config:
+        logger.warning(f"UI pattern '{ui_pattern_name}' not found for workflow '{workflow_id}'")
+        return None
+
+    return pattern_config
 
 def load_workflow_module(workflow_id: str, workflow_config: WorkflowConfig) -> Tuple[APIRouter, Optional[WorkflowClass], Optional[WorkflowEvent], Optional[Type[Any]]]:
     """
@@ -96,8 +149,6 @@ def load_workflow_module(workflow_id: str, workflow_config: WorkflowConfig) -> T
     try:
         # Import the workflow module dynamically
         module_path = workflow_config.code_path
-        logger.debug(f"Loading workflow module '{module_path}' for workflow '{workflow_id}'")
-
         workflow_module = importlib.import_module(module_path)
 
         # Extract the FastAPI router - look for 'router' attribute
@@ -126,7 +177,6 @@ def load_workflow_module(workflow_id: str, workflow_config: WorkflowConfig) -> T
                     break
 
         if main_workflow_class is None:
-            logger.debug(f"No main workflow class found in {module_path}, returning None for workflow class")
             main_workflow_class = None
 
         # Extract the event class
@@ -154,10 +204,6 @@ def load_workflow_module(workflow_id: str, workflow_config: WorkflowConfig) -> T
         if initializer is None:
             logger.debug(f"No specific initializer found for workflow '{workflow_id}' in '{module_path}'. Using generic initialization.")
 
-
-        logger.debug(f"Successfully loaded workflow '{workflow_id}' from '{module_path}'")
-        logger.debug(f"Router: {router}, Workflow class: {main_workflow_class}, Event class: {event_class}, Initializer: {initializer}")
-
         return router, main_workflow_class, event_class, initializer
 
     except ImportError as e:
@@ -175,7 +221,6 @@ def load_all_workflows() -> Dict[str, Tuple[APIRouter, Optional[WorkflowClass], 
     Returns:
         A dictionary mapping workflow IDs to (router, workflow_class, event_class, initializer) tuples
     """
-    logger.debug("Loading all workflows from system configuration")
 
     workflow_configs = get_all_workflow_configs()
     loaded_workflows = {}
@@ -194,6 +239,23 @@ def load_all_workflows() -> Dict[str, Tuple[APIRouter, Optional[WorkflowClass], 
     return loaded_workflows
 
 
+def get_workflow_factory_function(workflow_name: str):
+    """
+    Get the workflow factory function for a given workflow name.
+
+    This function provides backward compatibility for code that expects
+    a separate factory function getter.
+
+    Args:
+        workflow_name: The workflow identifier (e.g., 'A_agentic_rag')
+
+    Returns:
+        The workflow factory function from the WorkflowConfig
+    """
+    workflow_config = get_workflow_config(workflow_name)
+    return workflow_config.workflow_factory
+
+
 def reload_workflow(workflow_id: str, workflow_config: WorkflowConfig) -> Tuple[APIRouter, Optional[WorkflowClass], Optional[WorkflowEvent], Optional[Type[Any]]]:
     """
     Reload a specific workflow, useful for development or configuration updates.
@@ -205,7 +267,6 @@ def reload_workflow(workflow_id: str, workflow_config: WorkflowConfig) -> Tuple[
     Returns:
         The reloaded workflow components
     """
-    logger.debug(f"Reloading workflow '{workflow_id}'")
 
     # Clear module from cache to force reload
     if workflow_config.code_path in sys.modules:

@@ -13,7 +13,6 @@ from llama_index.server.api.models import ChatRequest, ChatAPIMessage
 from llama_index.core.workflow import Workflow
 from dataclasses import dataclass
 from super_starter_suite.shared.config_manager import config_manager, UserConfig
-from super_starter_suite.chat_bot.chat_history.chat_history_manager import ChatHistoryManager
 
 @dataclass
 class WorkflowEvent:
@@ -21,7 +20,7 @@ class WorkflowEvent:
 from llama_index.core.base.llms.types import MessageRole
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
-server_logger = config_manager.get_logger("workflow.server")
+server_logger = config_manager.get_logger("workflow.utils")
 
 
 @dataclass

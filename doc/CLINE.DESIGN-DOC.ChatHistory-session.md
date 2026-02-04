@@ -38,7 +38,7 @@ Each session contains comprehensive metadata for tracking and management:
 {
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
   "user_id": "bernard",
-  "workflow_type": "agentic_rag",
+  "integrate_type": "agentic_rag",
   "created_at": "2025-01-14T10:30:00Z",
   "updated_at": "2025-01-14T10:35:00Z",
   "title": "Chat about RAG implementation",
@@ -279,7 +279,7 @@ class SessionSearchIndex:
 
         # Index by user and workflow
         self._add_to_index(self.user_index, session.user_id, session_id)
-        self._add_to_index(self.workflow_index, session.workflow_type, session_id)
+        self._add_to_index(self.workflow_index, session.integrate_type, session_id)
 ```
 
 #### **2. Advanced Query Processing**
@@ -356,7 +356,7 @@ def import_session(self, import_data: Dict[str, Any], user_id: str) -> ChatSessi
     session = ChatSession(
         session_id=str(uuid.uuid4()),
         user_id=user_id,
-        workflow_type=import_data.get('workflow_type', 'imported'),
+        integrate_type=import_data.get('integrate_type', 'imported'),
         created_at=datetime.fromisoformat(import_data['created_at']),
         updated_at=datetime.fromisoformat(import_data['updated_at']),
         title=import_data.get('title', 'Imported Chat'),
@@ -522,11 +522,11 @@ class SessionMetrics:
         self.export_operations = 0
         self.error_count = 0
 
-    def track_session_creation(self, workflow_type: str):
+    def track_session_creation(self, integrate_type: str):
         """Track session creation metrics"""
         self.session_created += 1
         self._log_metric('session_created', {
-            'workflow_type': workflow_type,
+            'integrate_type': integrate_type,
             'timestamp': datetime.now().isoformat()
         })
 
@@ -830,7 +830,7 @@ class SessionManager {
 // Chat History: Workflow-aware session resumption
 class ChatHistoryManager {
     resumeChat() {
-        const workflowType = this.currentSession.workflow_type;
+        const workflowType = this.currentSession.integrate_type;
         // Intelligent interface redirection
         window.resumeWorkflowSession(this.currentSession.session_id, workflowType);
     }
@@ -1156,7 +1156,7 @@ def recover_sessions_on_startup(self):
             if not workflow_dir.is_dir():
                 continue
 
-            workflow_type = workflow_dir.name
+            integrate_type = workflow_dir.name
 
             for session_file in workflow_dir.glob("*.json"):
                 recovery_stats['total_sessions'] += 1
@@ -1301,7 +1301,7 @@ def perform_incremental_backup(self):
             session_path = self.get_session_path(session)
             if session_path.exists():
                 # Store relative path in backup
-                arcname = f"sessions/{session.user_id}/{session.workflow_type}/{session.session_id}.json"
+                arcname = f"sessions/{session.user_id}/{session.integrate_type}/{session.session_id}.json"
                 zipf.write(session_path, arcname)
 
         # Add backup metadata
@@ -1543,7 +1543,7 @@ pytest test/test_chat_history_load.py -v
 for i in {1..50}; do
   curl -s -X POST "http://localhost:8000/api/chat_history/sessions" \
     -H "Content-Type: application/json" \
-    -d '{"workflow_type": "agentic_rag", "title": "Load Test"}' &
+    -d '{"integrate_type": "agentic_rag", "title": "Load Test"}' &
 done
 ```
 

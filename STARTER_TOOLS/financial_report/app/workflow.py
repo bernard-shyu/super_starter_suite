@@ -21,13 +21,17 @@ from llama_index.core.workflow import (
 )
 from llama_index.server.api.models import AgentRunEvent, ChatRequest
 from llama_index.server.settings import server_settings
-from llama_index.server.tools.document_generator import DocumentGenerator
 from llama_index.server.tools.index import get_query_engine_tool
-from llama_index.server.tools.interpreter import E2BCodeInterpreter
-from llama_index.server.utils.agent_tool import (
+
+# Import local utilities instead of site-packages
+from super_starter_suite.shared.tools.interpreter import E2BCodeInterpreter
+from super_starter_suite.shared.tools.document_generator import DocumentGenerator
+from super_starter_suite.shared.agent_utils import (
     call_tools,
     chat_with_tools,
 )
+
+from super_starter_suite.shared.config_manager import config_manager
 
 
 def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds: float = 300.0) -> Workflow:
@@ -42,9 +46,21 @@ def create_workflow(chat_request: Optional[ChatRequest] = None, timeout_seconds:
         raise ValueError(
             "E2B_API_KEY is required to use the code interpreter tool. Please check README.md to know how to get the key."
         )
-    code_interpreter_tool = E2BCodeInterpreter(api_key=e2b_api_key).to_tool()
+    # Calculate RAG-ROOT output directory for tool artifacts
+    user_id = chat_request.id if chat_request else "anonymous"
+    user_config = config_manager.get_user_config(user_id)
+    rag_root = user_config.my_rag_root
+    target_output_dir = os.path.join(rag_root, "chat_history", "A_financial_report", "output")
+    os.makedirs(target_output_dir, exist_ok=True)
+
+    code_interpreter_tool = E2BCodeInterpreter(
+        api_key=e2b_api_key,
+        output_dir=target_output_dir
+    ).to_tool()
+    
     document_generator_tool = DocumentGenerator(
         file_server_url_prefix=server_settings.file_server_url_prefix,
+        output_dir=target_output_dir
     ).to_tool()
 
     return FinancialReportWorkflow(
@@ -135,17 +151,18 @@ class FinancialReportWorkflow(Workflow):
         user_msg = ev.get("user_msg")
         chat_history = ev.get("chat_history")
 
+        # 1. Add system prompt FIRST
+        if self.system_prompt:
+            self.memory.put(ChatMessage(
+                role=MessageRole.SYSTEM, content=self.system_prompt
+            ))
+
+        # 2. Add history
         if chat_history is not None:
             self.memory.put_messages(chat_history)
 
-        # Add user message to memory
+        # 3. Add latest user query
         self.memory.put(ChatMessage(role=MessageRole.USER, content=user_msg))
-
-        if self.system_prompt:
-            system_msg = ChatMessage(
-                role=MessageRole.SYSTEM, content=self.system_prompt
-            )
-            self.memory.put(system_msg)
 
         return InputEvent(input=self.memory.get())
 

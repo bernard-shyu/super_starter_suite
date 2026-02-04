@@ -12,35 +12,30 @@ Pattern C means FORBIDDEN to import from STARTER_TOOLS directory.
 All business logic must be reimplemented locally in this file.
 """
 
+import os
 import platform
 import subprocess
 from typing import Any, Type, Optional, Dict
-from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
-from super_starter_suite.shared.dto import MessageRole, create_chat_message
 
 # COMPLETE Pattern C: No imports from STARTER_TOOLS - full workflow reimplementation
 from llama_index.core.workflow import Workflow, Context, StartEvent, StopEvent, Event, step
-from llama_index.server.api.models import HumanInputEvent, HumanResponseEvent, ChatAPIMessage, ChatRequest
-from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
+from llama_index.server.api.models import HumanInputEvent, HumanResponseEvent, ChatRequest
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.settings import Settings
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
 from pydantic import BaseModel, Field
 
 import time
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.workflow_loader import get_workflow_config
 
-logger = config_manager.get_logger("workflow.ported.human_in_the_loop")
-router = None  # Pattern C: Human-in-the-loop workflows typically don't use direct HTTP endpoints
+# Create an empty APIRouter for workflows that don't provide HTTP endpoints
+from fastapi import APIRouter
+router = APIRouter()
 
-# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
-workflow_ID = "P_human_in_the_loop"
+logger = config_manager.get_logger("workflow.ported")
 
 # Load config for derived naming (no hard-coded text beyond workflow_ID)
-workflow_config = get_workflow_config(workflow_ID)
-# Validation happens in workflow_loader.py - assume config is correct
+workflow_config = get_workflow_config("P_human_in_the_loop")
 
 # ====================================================================================
 # STEP 1-2: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C)
@@ -107,7 +102,7 @@ class CLIWorkflow(Workflow):
         if user_msg is None:
             raise ValueError("Pattern C: Missing user_msg in StartEvent")
 
-        logger.info(f"Pattern C: Processing human-in-the-loop CLI request: {user_msg[:50]}...")
+        logger.info(f"[HITL] START: Processing CLI request: {user_msg[:50]}...")
 
         await ctx.set("user_msg", user_msg)
 
@@ -134,7 +129,7 @@ class CLIWorkflow(Workflow):
         if not command or command == "":
             raise ValueError("Pattern C: Couldn't generate a CLI command from the request")
 
-        logger.info(f"Pattern C: Generated CLI command: {command[:50]}...")
+        logger.info(f"[HITL] PROMPT: Generated command '{command[:50]}...'")
         await ctx.set("command", command)
 
         # Pattern C: Reimplement human input request for command confirmation
@@ -159,98 +154,66 @@ class CLIWorkflow(Workflow):
             if not command or command == "":
                 raise ValueError("Pattern C: Missing command in human response event")
 
-            logger.info(f"Pattern C: Executing approved CLI command: {command[:50]}...")
+            logger.info(f"[HITL] EXECUTE: Approved command '{command[:50]}...', cwd: {os.getcwd()}")
 
             # Pattern C: Reimplement secure command execution (inspired by STARTER_TOOLS)
             try:
+                # Use workflow's predefined user_data_path for command execution
+                # workflow_config.user_data_path should be initialized in workflow_loader.py with USER_RAG_ROOT/workflow_data
+                workflow_data_dir = getattr(workflow_config, 'user_data_path', os.path.expanduser("~"))
+                logger.debug(f"[HITL] DIR: {workflow_data_dir}")
+
+                os.makedirs(workflow_data_dir, exist_ok=True)  # Ensure directory exists
+
                 result = subprocess.run(
                     command,
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=300  # 5-minute timeout for safety
+                    timeout=300,  # 5-minute timeout for safety
+                    cwd=workflow_data_dir  # Execute in workflow's user data directory
                 )
 
                 output = result.stdout or result.stderr
-                logger.info("Pattern C: CLI command execution completed")
-
                 success = True if result.returncode == 0 else False
-                logger.debug(f"Pattern C: Command succeeded: {success}")
+                logger.info("[HITL] COMPLETE: Execution finished, success: {success}")
 
                 # Return either stdout or stderr depending on what was captured
                 return StopEvent(result=output or f"Command completed with return code: {result.returncode}")
 
             except subprocess.TimeoutExpired:
-                logger.error(f"Pattern C: CLI command timed out: {command}")
+                logger.error(f"[HITL] ERROR: Timeout for command '{command[:30]}'")
                 return StopEvent(result="Command execution timed out after 5 minutes")
             except Exception as e:
-                logger.error(f"Pattern C: CLI command execution failed: {e}")
+                logger.error(f"[HITL] ERROR: Execution failed: {e}")
                 return StopEvent(result=f"Command execution failed: {str(e)}")
 
         else:
-            logger.info("Pattern C: Human declined command execution")
+            logger.info("[HITL] DECLINE: User rejected execution")
             return StopEvent(result=None)  # Return empty result for declined execution
 
 # ====================================================================================
 # STEP 3: COMPLETE FACTORY FUNCTION REIMPLEMENTATION (PATTERN C)
 # ====================================================================================
-def create_workflow() -> Workflow:
+
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 120.0) -> Workflow:
     """
     Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
 
     Creates and returns a CLI workflow instance with human-in-the-loop capabilities
     """
     try:
-        logger.debug("Pattern C: Creating Human-In-The-Loop CLI Workflow instance")
-        return CLIWorkflow()
+        logger.debug("[HITL] FACTORY: Creating instance, TIMEOUT: {timeout_seconds}s")
+        return CLIWorkflow(timeout=timeout_seconds)
 
     except Exception as e:
-        logger.error(f"Pattern C: Workflow creation failed: {e}")
+        logger.error(f"[HITL] ERROR: Creation failed: {e}")
         raise ValueError(f"Failed to create human-in-the-loop workflow: {str(e)}")
 
 # ====================================================================================
 # STEP 4: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
 # ====================================================================================
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
-
-router = APIRouter()
-
-# Thin factory function (belongs in this file with workflow logic)
-def create_human_in_the_loop_workflow_factory(chat_request: Optional[ChatRequest] = None):
-    """Thin factory that returns workflow instance using local implementation"""
-    return create_workflow()
-
-@router.post("/chat")
-@bind_workflow_session(workflow_config)
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
-    """
-    THIN ENDPOINT WRAPPER - uses execute_adapter_workflow for consistent artifact handling
-
-    Ported workflows use the same proven infrastructure as adapted workflows.
-
-    Note: Human-in-the-loop workflows are designed to work with the integrated
-    LlamaIndex server framework for proper human interaction handling.
-    """
-    # Extract request parameters
-    user_message = payload["question"]
-    session = request.state.chat_session
-    chat_memory = request.state.chat_memory
-    user_config = request.state.user_config
-    chat_manager = request.state.chat_manager
-
-    # Use PROVEN execute_adapter_workflow instead of buggy execute_ported_workflow
-    response_data = await execute_adapter_workflow(
-        workflow_factory=create_human_in_the_loop_workflow_factory,  # Ported factory
-        workflow_config=workflow_config,
-        user_message=user_message,
-        user_config=user_config,
-        chat_manager=chat_manager,
-        session=session,
-        chat_memory=chat_memory,
-        logger=logger
-    )
-
-    # Return JSON response (ported workflows use JSON, adapted use HTML)
-    return JSONResponse(content=response_data)
+# LEGACY CHAT ENDPOINT REMOVED
+# Workflow execution is now handled centrally through /api/workflow/{workflow}/session/{session_id}
+# in super_starter_suite/chat_bot/workflow_execution/workflow_endpoints.py

@@ -40,5 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# User Settings
-settings.*.toml
+# Ignore everything in config/, But keep system_config.toml
+config/*
+!config/system_config.toml
+

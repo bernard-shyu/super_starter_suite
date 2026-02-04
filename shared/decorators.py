@@ -5,205 +5,210 @@ from .config_manager import config_manager
 from .llama_utils import init_llm
 
 # Initialize logger
-logger = config_manager.get_logger("main")
+logger = config_manager.get_logger("endpoints")
 
 
-def bind_user_context(func):
+def bind_user_context(validate_path_session_integrity: bool = False):
     """
-    Decorator to bind user context to FastAPI endpoints.
-    Ensures user settings are loaded and available in the request state.
-    Also initializes the LLM for the user.
+    User context validation decorator - validates middleware-set user context.
 
-    CRITICAL: In Python, decorators are applied from bottom to top.
-    This decorator must be placed AFTER @router decorators to ensure FastAPI gets this decorated function beforehand.
-    """
-    @wraps(func)
-    async def context_bound_function(request: Request, *args, **kwargs):
-        try:
-            # Ensure user context is initialized
-            user_id = getattr(request.state, 'user_id', 'Default')
-            user_config = config_manager.get_user_config(user_id)
-            request.state.user_config = user_config
-
-            # CRITICAL: Always initialize LLM when decorator is called
-            user_id = getattr(request.state, 'user_id', 'Default')
-            user_config = request.state.user_config
-
-            try:
-                init_llm(user_config)
-            except Exception as e:
-                # Log error but don't fail the request - let endpoints handle LLM issues
-                logger.error(f"bind_user_context: Failed to initialize LLM for user {user_id}: {str(e)}")
-
-            # Verify settings are available
-            if not hasattr(request.state, 'user_config'):
-                raise HTTPException(
-                    status_code=400,
-                    detail="User context not available. Please ensure user is properly identified."
-                )
-
-            return await func(request, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"EXCEPTION in bind_user_context decorator: {str(e)}", exc_info=True)
-            # Re-raise the exception to not hide it
-            raise
-
-    return context_bound_function
-
-def bind_rag_session(func):
-    """
-    PHASE 1: Single decorator that handles both user context and RAG session.
-
-    This decorator combines @bind_user_context and @bind_rag_session functionality:
-    1. Initializes user_config from request.state.user_id
-    2. Initializes LLM for the user
-    3. Creates/gets RAG generation session
-    4. Handles RAG type switching automatically
-
-    Single point of entry for Generate UI endpoints - no more dual decorators needed.
+    User context is set by middleware - this decorator only validates it exists.
+    Follows architecture: middleware sets context, decorators validate and bind sessions.
 
     Args:
-        func: The endpoint function to decorate
+        validate_path_session_integrity: Whether to validate session domain matches path
 
     Returns:
-        Decorated function with user_config and rag_session in request.state
+        Request with validated user context (set by middleware)
     """
-    @wraps(func)
-    async def unified_bound_function(request: Request, *args, **kwargs):
-        try:
-            logger.debug(f"PHASE 1 bind_rag_session: Starting unified decorator for {func.__name__}")
-
-            # PHASE 1: Step 1 - Initialize user_config (from bind_user_context)
-            user_id = getattr(request.state, 'user_id', 'Default')
-            user_config = config_manager.get_user_config(user_id)
-            request.state.user_config = user_config
-
-            # PHASE 1: Step 2 - Initialize LLM (from bind_user_context)
+    def decorator(func):
+        logger.info(f"[DECORATOR] bind_user_context registered for {func.__name__}")
+        @wraps(func)
+        async def context_bound_function(request: Request, *args, **kwargs):
             try:
-                init_llm(user_config)
+                # VALIDATION ONLY: User context should be set by middleware
+                from .session_utils import RequestValidator
+                user_context_validation = RequestValidator.validate_user_context(request)
+                if not user_context_validation.is_valid:
+                    logger.error(f"User context validation failed: {user_context_validation.message}")
+                    raise HTTPException(
+                        status_code=user_context_validation.error_code,
+                        detail=user_context_validation.message
+                    )
+
+                # Path-session integrity validation (optional)
+                if validate_path_session_integrity:
+                    path_validation = RequestValidator.validate_path_session_integrity(request.url.path, request)
+                    if not path_validation.is_valid:
+                        logger.warning(f"Path-session integrity failed: {path_validation.message}")
+                        # For user context endpoints, we allow non-session endpoints so don't fail
+
+                return await func(request, *args, **kwargs)
+            except HTTPException:
+                # Re-raise HTTP exceptions as-is
+                raise
             except Exception as e:
-                logger.error(f"bind_rag_session: Failed to initialize LLM for user {user_id}: {str(e)}")
+                logger.error(f"EXCEPTION in bind_user_context decorator: {str(e)}", exc_info=True)
+                # Re-raise the exception to not hide it
+                raise
 
-            # PHASE 1: Step 3 - Create/get RAG session (from bind_rag_session)
-            from super_starter_suite.rag_indexing.rag_generation_session import create_rag_session
-            session = create_rag_session(user_config)
-            request.state.rag_session = session
+        return context_bound_function
 
-            # PHASE 1: Step 4 - Auto-handle RAG type consistency
-            # Session owns current_rag_type, no external parameters needed
-            current_rag_type = user_config.my_rag.rag_type
-            if session._current_rag_type != current_rag_type:
-                logger.debug(f"bind_rag_session: Auto-switching RAG type {session._current_rag_type} -> {current_rag_type}")
-                # Use session's clean switch_rag_type method (no external params)
-                session.switch_rag_type(current_rag_type)
-                logger.debug(f"bind_rag_session: Switched to {current_rag_type}, total_files={session.get_total_files()}")
-
-            result = await func(request, *args, **kwargs)
-            return result
-
-        except HTTPException:
-            logger.error("bind_rag_session: HTTPException caught, re-raising")
-            raise
-        except Exception as e:
-            logger.error(f"EXCEPTION in bind_rag_session decorator: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to initialize unified context: {str(e)}"
-            )
-
-    return unified_bound_function
+    return decorator
 
 
-def bind_workflow_session(workflow_config):
+
+
+
+def bind_workflow_session_dynamic():
     """
-    UNIFIED DECORATOR with behavior flags for all workflow types.
+    Dynamic workflow session binding decorator - validates user context and binds workflow session.
 
-    This unified decorator replaces bind_workflow_session and bind_workflow_session_porting,
-    dynamically managing behavior based on configuration flags instead of hardcoded logic.
+    NOTE: This decorator is incompatible with FastAPI's route processing and has been replaced
+    by direct function calls to ensure_workflow_session() in workflow endpoints.
 
-    Args:
-        workflow_type: "adapted" (imports STARTER_TOOLS), "ported" (direct logic), "meta" (orchestration)
-        response_format: "json" (for artifacts + response), "html" (legacy format)
-        artifact_enabled: True to enable artifact extraction and synthetic response generation
-        chat_history_context: True to maintain conversation history
-
-    Returns:
-        Decorated function with configurable workflow session context
+    User context is set by middleware - this decorator validates, extracts workflow_id, and binds session.
+    Follows architecture: middleware sets context, decorators validate and bind.
     """
     def decorator(func):
         @wraps(func)
-        async def unified_workflow_bound_function(request: Request, payload: Dict[str, Any], *args, **kwargs):
-            # SINGLE RESPONSIBILITY: Use raw workflow ID from TOML config for consistent session keys
-            workflow_name = workflow_config.workflow_ID
+        async def context_bound_function(request: Request, workflow_id: str, *args, **kwargs):
 
-            try:
-                # Extract workflow configuration attributes (now available outside try)
-                workflow_type = workflow_config.workflow_type
-                response_format = workflow_config.response_format
-                artifact_enabled = workflow_config.artifact_enabled
-                chat_history_context = workflow_config.chat_history_context
-
-                logger.debug(f"bind_workflow_session({workflow_name}): CONFIG-DRIVEN decorator starting for {func.__name__}")
-
-                # Step 1: Initialize user_config (like bind_user_context)
-                user_id = getattr(request.state, 'user_id', 'Default')
-                user_config = config_manager.get_user_config(user_id)
-                request.state.user_config = user_config
-
-                # Step 2: Initialize LLM for user
-                try:
-                    init_llm(user_config)
-                except Exception as e:
-                    logger.error(f"bind_workflow_session: Failed to initialize LLM for user {user_id}: {str(e)}")
-
-                # Step 3: ROUTE SESSION MANAGEMENT THROUGH SessionAuthority (SINGLE SOURCE OF TRUTH)
-                if chat_history_context:
-                    from super_starter_suite.chat_bot.session_authority import session_authority as _session_authority
-
-                    # SINGLE SOURCE: All session operations go through SessionAuthority
-                    # This ensures one active session per workflow, no more uncoordinated creation
-                    session_data = _session_authority.get_or_create_session(
-                        workflow_name=workflow_name,
-                        user_config=user_config,
-                        existing_session_id=None  # Decorators get what's available, don't specify
-                    )
-
-                    session = session_data['session']
-                    request.state.chat_session = session
-                    request.state.chat_memory = session_data.get('memory')
-                    replaced_session_id = session_data.get('replaced_session_id')
-
-                    if replaced_session_id:
-                        logger.debug(f"bind_workflow_session({workflow_name}): Session {replaced_session_id[:8]}... replaced by {session.session_id[:8]}...")
-                    else:
-                        logger.debug(f"bind_workflow_session({workflow_name}): Using session {session.session_id[:8]}... for {workflow_name}")
-
-                    logger.debug(f"bind_workflow_session({workflow_name}): Session {session.session_id} ready with {len(session.messages)} messages via bridge")
-                else:
-                    # Minimal setup for non-chat workflows
-                    request.state.chat_manager = None
-                    request.state.chat_session = None
-                    request.state.chat_memory = None
-
-                # Step 8: Store workflow config in request state for endpoint access
-                request.state.workflow_config = workflow_config
-
-                logger.debug(f"bind_workflow_session({workflow_name}): Configured with workflow_type={workflow_type}")
-
-                # Step 9: Execute the workflow endpoint
-                result = await func(request, payload, *args, **kwargs)
-
-                return result
-
-            except HTTPException:
-                logger.error(f"bind_workflow_session({workflow_name}): HTTPException caught, re-raising")
-                raise
-            except Exception as e:
-                logger.error(f"bind_workflow_session({workflow_name}): EXCEPTION: {str(e)}", exc_info=True)
+            # User context validation (middleware sets UserConfig object)
+            from .session_utils import RequestValidator, SessionBinder
+            user_context_validation = RequestValidator.validate_user_context(request)
+            if not user_context_validation.is_valid:
+                logger.error(f"User context validation failed: {user_context_validation.message}")
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to initialize workflow session context: {str(e)}"
+                    status_code=user_context_validation.error_code,
+                    detail=user_context_validation.message
                 )
 
-        return unified_workflow_bound_function
+            # Use workflow_id passed from endpoint (FastAPI resolves path parameters)
+
+            # Session binding (uses user_config from middleware via BasicUserSession inheritance)
+            bound_session = SessionBinder.bind_session(request, "workflow_session", {"workflow_id": workflow_id})
+
+            # Apply session data to request state
+            bound_session.apply_to_request_state(request)
+            logger.debug(f"[DECORATOR] Applied to request.state: session_handler={getattr(request.state, 'session_handler', 'MISSING')}")
+
+            return await func(request, workflow_id, *args, **kwargs)
+
+        return context_bound_function
+
+    return decorator
+
+# ============================================================================
+# COMMON SESSION BINDING UTILITY (Shared by all session-based decorators)
+# ============================================================================
+
+async def _restore_session_context(request: Request, session_id: str, session_type: str):
+    """
+    COMMON CONTEXT RESTORATION: Shared by all session-based decorators
+
+    Restores complete request.state context from session_id:
+    - request.state.user_config
+    - request.state.user_id
+    - request.state.session_handler
+    - request.state.session_id
+
+    Args:
+        request: FastAPI request object
+        session_id: Session ID from router parameter
+        session_type: Expected session type ("workflow_session", "rag_session", "history_session")
+
+    Returns:
+        bool: True if context restored from existing session, False if new session needed
+    """
+    from .session_utils import RequestValidator, SessionBinder, SESSION_REGISTRY
+
+    try:
+        # ✅ STEP 1: Try to restore complete context from existing session
+        if session_id in SESSION_REGISTRY:
+            session_handler = SESSION_REGISTRY[session_id]
+
+            # Validate session type and ownership
+            if session_handler.session_type == session_type:
+                # For existing sessions, get user_id from handler (all concrete handlers have it)
+                handler_user_id = getattr(session_handler, 'user_id', None)
+                current_user_id = getattr(request.state, 'user_id', None)
+
+                # Allow if handler has user_id and matches current user (or no current user set)
+                if handler_user_id and (not current_user_id or handler_user_id == current_user_id):
+
+                    # 🔄 REFRESH SESSION CONTEXT from existing session
+                    # 1. Refresh UserConfig to catch any settings changes since last binding
+                    if hasattr(session_handler, 'refresh_config'):
+                        session_handler.refresh_config()
+
+                    # 2. Re-initialize LLM for the session (llama_utils safely handles caching/changes)
+                    if hasattr(session_handler, 'initialize_session_llm'):
+                        session_handler.initialize_session_llm()
+
+                    # 3. Apply refreshed context to request state
+                    request.state.user_config = getattr(session_handler, 'user_config', None)
+                    request.state.user_id = handler_user_id
+                    request.state.session_handler = session_handler
+                    request.state.session_id = session_id
+
+                    return True  # Context restored
+            else:
+                pass
+
+        # ❌ STEP 2: New session - ensure user context exists
+        if not hasattr(request.state, 'user_config') or not hasattr(request.state, 'user_id'):
+            validation = RequestValidator.validate_user_context(request)
+            if not validation.is_valid:
+                logger.error(f"Session context validation failed: {validation.message}")
+                raise HTTPException(validation.error_code, validation.message)
+
+        # Set session_id for binding
+        request.state.session_id = session_id
+
+        # Perform binding for new session
+        bound_session = SessionBinder.bind_session(request, session_type, {})
+        bound_session.apply_to_request_state(request)
+
+        return False  # New session created
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Context restoration failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Context restoration failed: {str(e)}")
+
+
+# ============================================================================
+# SESSION-BASED DECORATORS (Share common context restoration)
+# ============================================================================
+
+def bind_workflow_session():
+    """Workflow session binding with complete context restoration"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(request: Request, session_id: str, *args, **kwargs):
+            await _restore_session_context(request, session_id, "workflow_session")
+            return await func(request, session_id, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def bind_rag_session():
+    """RAG session binding with complete context restoration"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(request: Request, session_id: str, *args, **kwargs):
+            await _restore_session_context(request, session_id, "rag_session")
+            return await func(request, session_id, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def bind_history_session():
+    """History session binding with complete context restoration"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(request: Request, session_id: str, *args, **kwargs):
+            await _restore_session_context(request, session_id, "history_session")
+            return await func(request, session_id, *args, **kwargs)
+        return wrapper
     return decorator

@@ -12,11 +12,8 @@ Pattern C means FORBIDDEN to import from STARTER_TOOLS directory.
 All business logic must be reimplemented locally in this file.
 """
 
-from fastapi import APIRouter, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request
 from typing import Dict, Any, Optional, Literal, Union
-from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
 
 # COMPLETE Pattern C: No imports from STARTER_TOOLS - full workflow reimplementation
 from llama_index.core.workflow import Workflow, Context, Event, StartEvent, StopEvent, step
@@ -25,11 +22,8 @@ from llama_index.server.api.models import (
     CodeArtifactData, UIEvent
 )
 from llama_index.core.base.llms.types import ChatMessage as LlamaChatMessage
-from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
 from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.core.prompts import PromptTemplate
 from llama_index.core.settings import Settings
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
 from pydantic import BaseModel, Field
 
 import time
@@ -37,15 +31,11 @@ import re
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.workflow_loader import get_workflow_config
 
-logger = config_manager.get_logger("workflow.ported.code_generator")
+logger = config_manager.get_logger("workflow.ported")
 router = APIRouter()
 
-# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
-workflow_ID = "P_code_generator"
-
 # Load config for derived naming (no hard-coded text beyond workflow_ID)
-workflow_config = get_workflow_config(workflow_ID)
-# Validation happens in workflow_loader.py - assume config is correct
+workflow_config = get_workflow_config("P_code_generator")
 
 # ====================================================================================
 # STEP 1-2: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C)
@@ -106,7 +96,7 @@ class CodeArtifactWorkflow(Workflow):
             from llama_index.server.api.utils import get_last_artifact
             return get_last_artifact(chat_request)
         except Exception as e:
-            logger.debug(f"Pattern C: Could not retrieve last artifact: {e}")
+            logger.debug(f"[CODE_GEN] RETRIEVE: No existing artifact found ({e})")
             return None
 
     @step
@@ -120,7 +110,7 @@ class CodeArtifactWorkflow(Workflow):
         if user_msg is None:
             raise ValueError("user_msg is required to run the workflow")
 
-        logger.info(f"Pattern C: Preparing chat history for: {user_msg[:50]}...")
+        logger.info(f"[CODE_GEN] START: Preparing docs for '{user_msg[:50]}...'")
 
         await ctx.set("user_msg", user_msg)
 
@@ -149,7 +139,7 @@ class CodeArtifactWorkflow(Workflow):
 
         Analyzes user request to determine next step: code generation vs explanation
         """
-        logger.info("Pattern C: Planning next step...")
+        logger.info("[CODE_GEN] PLAN: Analyzing requirement")
 
         ctx.write_event_to_stream(
             UIEvent(
@@ -210,7 +200,7 @@ class CodeArtifactWorkflow(Workflow):
         memory.put(LlamaChatMessage(role="assistant", content=f"The plan for next step: \n{response.text}"))
         await ctx.set("memory", memory)
 
-        logger.info(f"Pattern C: Planning result - {requirement.next_step}: {requirement.requirement[:50]}...")
+        logger.info(f"[CODE_GEN] DECISION: {requirement.next_step} | {requirement.requirement[:50]}...")
 
         if requirement.next_step == "coding":
             return GenerateArtifactEvent(requirement=requirement)
@@ -224,7 +214,7 @@ class CodeArtifactWorkflow(Workflow):
 
         Generate code based on planning requirements and previous artifacts
         """
-        logger.info(f"Pattern C: Generating code artifact for: {event.requirement.language or 'unknown'}")
+        logger.info(f"[CODE_GEN] GENERATE: {event.requirement.language or 'unknown'}")
 
         ctx.write_event_to_stream(
             UIEvent(
@@ -294,7 +284,7 @@ class CodeArtifactWorkflow(Workflow):
 
         Generate natural language explanation of what was done
         """
-        logger.info("Pattern C: Synthesizing final answer...")
+        logger.info("[CODE_GEN] COMPLETE: Synthesizing final answer")
 
         memory: ChatMemoryBuffer = await ctx.get("memory")
         chat_history = memory.get()
@@ -330,7 +320,7 @@ class CodeArtifactWorkflow(Workflow):
         json_block = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_text, re.IGNORECASE)
         if json_block is None:
             # Fallback to default answering
-            logger.warning("Pattern C: No JSON block found in planning response, defaulting to answering")
+            logger.warning("[CODE_GEN] PLAN_ERROR: No JSON found, defaulting to answer")
             return Requirement(
                 next_step="answering",
                 language=None,
@@ -341,7 +331,7 @@ class CodeArtifactWorkflow(Workflow):
         try:
             return Requirement.model_validate_json(json_block.group(1).strip())
         except Exception as e:
-            logger.error(f"Pattern C: Failed to parse requirement JSON: {e}")
+            logger.error(f"[CODE_GEN] ERROR: JSON parse failed: {e}")
             return Requirement(
                 next_step="answering",
                 language=None,
@@ -358,7 +348,7 @@ class CodeArtifactWorkflow(Workflow):
         code_match = re.search(language_pattern, response_text)
 
         if code_match is None:
-            logger.debug("Pattern C: No code block found in response")
+            logger.debug("[CODE_GEN] EXTRACT: No code block found")
             return "", requested_language
 
         language = code_match.group(1).strip().lower()
@@ -376,7 +366,7 @@ class CodeArtifactWorkflow(Workflow):
 # ====================================================================================
 # STEP 3: COMPLETE FACTORY FUNCTION REIMPLEMENTATION (PATTERN C)
 # ====================================================================================
-def create_workflow(chat_request: ChatRequest) -> Workflow:
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 240.0) -> Workflow:
     """
     Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
 
@@ -384,56 +374,23 @@ def create_workflow(chat_request: ChatRequest) -> Workflow:
     - Handle initialization and configuration
     """
     try:
-        logger.debug("Pattern C: Creating CodeArtifactWorkflow instance")
+        logger.debug("[CODE_GEN] FACTORY: Creating instance")
 
         workflow = CodeArtifactWorkflow(
             chat_request=chat_request,
-            timeout=240.0  # Increased timeout for code generation
+            timeout=timeout_seconds  # Use configurable timeout
         )
 
         return workflow
 
     except Exception as e:
-        logger.error(f"Pattern C: Workflow creation failed: {e}")
+        logger.error(f"[CODE_GEN] ERROR: Creation failed: {e}")
         raise ValueError(f"Failed to create code generator workflow: {str(e)}")
 
 # ====================================================================================
 # STEP 4: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
 # ====================================================================================
 
-# Thin factory function (belongs in this file with workflow logic)
-def create_code_generator_workflow_factory(chat_request: Optional[ChatRequest] = None):
-    """Thin factory that returns workflow instance using local implementation"""
-    if chat_request is None:
-        raise ValueError("ChatRequest must be provided for ported workflow factory")
-    return create_workflow(chat_request)
-
-@router.post("/chat")
-@bind_workflow_session(workflow_config)
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
-    """
-    THIN ENDPOINT WRAPPER - uses execute_adapter_workflow for consistent artifact handling
-
-    Ported workflows use the same proven infrastructure as adapted workflows.
-    """
-    # Extract request parameters
-    user_message = payload["question"]
-    session = request.state.chat_session
-    chat_memory = request.state.chat_memory
-    user_config = request.state.user_config
-    chat_manager = request.state.chat_manager
-
-    # Use PROVEN execute_adapter_workflow instead of buggy execute_ported_workflow
-    response_data = await execute_adapter_workflow(
-        workflow_factory=create_code_generator_workflow_factory,  # Ported factory
-        workflow_config=workflow_config,
-        user_message=user_message,
-        user_config=user_config,
-        chat_manager=chat_manager,
-        session=session,
-        chat_memory=chat_memory,
-        logger=logger
-    )
-
-    # Return JSON response (ported workflows use JSON, adapted use HTML)
-    return JSONResponse(content=response_data)
+# LEGACY CHAT ENDPOINT REMOVED
+# Workflow execution is now handled centrally through /api/workflow/{workflow}/session/{session_id}
+# in super_starter_suite/chat_bot/workflow_execution/workflow_endpoints.py

@@ -21,6 +21,18 @@ from super_starter_suite.shared.config_manager import config_manager
 # Get logger for index utilities
 utils_logger = config_manager.get_logger("gen_index")
 
+# Global cache for embedding models to prevent memory leaks and redundant loading
+_EMBED_MODEL_CACHE = {}
+
+def get_embed_model(model_name: str = "BAAI/bge-m3") -> HuggingFaceEmbedding:
+    """
+    Get or create a cached instance of a HuggingFaceEmbedding model.
+    """
+    if model_name not in _EMBED_MODEL_CACHE:
+        utils_logger.info(f"get_embed_model:: Loading embedding model: {model_name}")
+        _EMBED_MODEL_CACHE[model_name] = HuggingFaceEmbedding(model_name=model_name)
+    return _EMBED_MODEL_CACHE[model_name]
+
 def load_index(user_config: UserConfig):
     """
     Load a LlamaIndex index from the specified storage directory.
@@ -55,7 +67,7 @@ def get_index(chat_request: Optional[ChatRequest] = None) -> VectorStoreIndex:
     user_id      = chat_request.id
     user_config  = ConfigManager().get_user_config(user_id)
     Settings.llm = init_llm(user_config)
-    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")     # English: "BAAI/bge-base-en-v1.5" / "BAAI/bge-large-en-v1.5",  multi-lingual: "BAAI/bge-m3" / "BAAI/bge-m3-retromae"
+    Settings.embed_model = get_embed_model("BAAI/bge-m3")     # English: "BAAI/bge-base-en-v1.5" / "BAAI/bge-large-en-v1.5",  multi-lingual: "BAAI/bge-m3" / "BAAI/bge-m3-retromae"
     return load_index(user_config)
 
 def get_rag_index(user_config: UserConfig):
@@ -63,8 +75,80 @@ def get_rag_index(user_config: UserConfig):
     Convenience wrapper to load an index for a given RAG type using the globally loaded settings.
     """
     Settings.llm = init_llm(user_config)
-    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")     # English: "BAAI/bge-base-en-v1.5" / "BAAI/bge-large-en-v1.5",  multi-lingual: "BAAI/bge-m3" / "BAAI/bge-m3-retromae"
+    Settings.embed_model = get_embed_model("BAAI/bge-m3")     # English: "BAAI/bge-base-en-v1.5" / "BAAI/bge-large-en-v1.5",  multi-lingual: "BAAI/bge-m3" / "BAAI/bge-m3-retromae"
     return load_index(user_config)
+
+def get_document_content_by_node_id(node_id: str, user_config: Optional[UserConfig] = None) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve actual document content from RAG index by Node ID for citation display.
+
+    This function loads the RAG index and retrieves the full document content
+    for a given Node ID (citation ID). Used by citation viewer to show
+    actual source document text instead of metadata.
+
+    Args:
+        node_id: Node ID (citation ID) to retrieve document content for
+        user_config: Optional user configuration (will try to get from config manager)
+
+    Returns:
+        dict or None: Document content dictionary with keys:
+        - content: Full text content of the document chunk
+        - metadata: Document metadata (filename, mimetype, etc.)
+        - node_id: The Node ID used for retrieval
+        Returns None if node not found or error occurs
+    """
+    try:
+        # Get user config if not provided
+        if user_config is None:
+            from super_starter_suite.shared.config_manager import ConfigManager
+            config_manager = ConfigManager()
+            user_config = config_manager.get_user_config()  # Get current user config
+
+        if not user_config:
+            utils_logger.error("get_document_content_by_node_id:: No user configuration available")
+            return None
+
+        # Load the index (same logic as load_index function)
+        storage_path = user_config.my_rag.storage_path
+        if not os.path.exists(storage_path):
+            utils_logger.warning(f"get_document_content_by_node_id:: RAG storage not found: {storage_path}")
+            return None
+
+        utils_logger.debug(f"get_document_content_by_node_id:: Loading index from {storage_path} to retrieve node {node_id}")
+
+        storage_context = get_storage_context(storage_path)
+        index = load_index_from_storage(storage_context)
+
+        # Retrieve the node by ID from docstore
+        if node_id not in index.docstore.docs:
+            utils_logger.warning(f"get_document_content_by_node_id:: Node {node_id} not found in docstore")
+            return None
+
+        node = index.docstore.docs[node_id]
+
+        # Extract document content (try multiple fields for compatibility)
+        content = getattr(node, 'text', '') or getattr(node, 'content', '')
+        metadata = getattr(node, 'metadata', {})
+        node_id_retrieved = getattr(node, 'id_', None) or getattr(node, 'id', None)
+        mimetype = getattr(node, 'mimetype', 'text/plain')
+
+        # Format response
+        document_data = {
+            "content": content,
+            "metadata": metadata,
+            "node_id": node_id_retrieved or node_id,
+            "mimetype": mimetype,
+            "text_length": len(content) if content else 0,
+            "source_file": metadata.get('source_file', metadata.get('file_name', 'Unknown')),
+            "retrieved_at": datetime.now().isoformat()
+        }
+
+        utils_logger.info(f"get_document_content_by_node_id:: Successfully retrieved document: {document_data['source_file']} ({len(content)} chars)")
+        return document_data
+
+    except Exception as e:
+        utils_logger.error(f"get_document_content_by_node_id:: Error retrieving node {node_id}: {e}")
+        return None
 
 # ============================================================================
 # RAG Metadata Management System

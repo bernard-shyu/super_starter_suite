@@ -745,7 +745,7 @@ def process_ui_event_generic(event_data: UIEvent, **workflow_context):
 # workflow_adapters/agentic_rag.py (after)
 async def handle_ui_event(event_data: UIEvent):
     """Thin adapter layer - delegates to shared generic logic."""
-    return process_ui_event_generic(event_data, workflow_type="agentic_rag")
+    return process_ui_event_generic(event_data, integrate_type="agentic_rag")
 ```
 
 **Benefits**:
@@ -844,7 +844,7 @@ from shared.workflow_utils import persist_artifacts_to_session
 @app.post("/api/chat/{workflow}/session/{session_id}")
 async def chat_endpoint(...):
     # Process request using shared workflow utilities
-    artifacts = process_ui_event_generic(event_data, workflow_type=workflow)
+    artifacts = process_ui_event_generic(event_data, integrate_type=workflow)
 
     # Persist to session JSON file atomically
     persist_artifacts_to_session(artifacts, session_id, workflow)
@@ -852,7 +852,7 @@ async def chat_endpoint(...):
     return {"response": response, "session_id": session_id}
 
 # shared/workflow_utils.py (new)
-def persist_artifacts_to_session(artifacts: List[Dict], session_id: str, workflow_type: str):
+def persist_artifacts_to_session(artifacts: List[Dict], session_id: str, integrate_type: str):
     """Atomically persist artifacts to session JSON file."""
     session_file = get_session_file_path(session_id)
     session_data = load_session_data(session_file)
@@ -861,10 +861,10 @@ def persist_artifacts_to_session(artifacts: List[Dict], session_id: str, workflo
     if "artifacts" not in session_data:
         session_data["artifacts"] = {}
 
-    if workflow_type not in session_data["artifacts"]:
-        session_data["artifacts"][workflow_type] = []
+    if integrate_type not in session_data["artifacts"]:
+        session_data["artifacts"][integrate_type] = []
 
-    session_data["artifacts"][workflow_type].extend(artifacts)
+    session_data["artifacts"][integrate_type].extend(artifacts)
 
     # Atomic write to prevent corruption
     write_session_data_atomic(session_file, session_data)
@@ -957,14 +957,14 @@ class WorkflowEventProcessor:
         self.event_handlers = {}
         self.artifact_generators = {}
 
-    def register_workflow(self, workflow_type: str, config: Dict):
+    def register_workflow(self, integrate_type: str, config: Dict):
         """Register a workflow with its specific configuration."""
-        self.event_handlers[workflow_type] = config.get("event_handler")
-        self.artifact_generators[workflow_type] = config.get("artifact_generator")
+        self.event_handlers[integrate_type] = config.get("event_handler")
+        self.artifact_generators[integrate_type] = config.get("artifact_generator")
 
     def process_event(self, event_data: UIEvent) -> Optional[Dict]:
         """Process workflow events generically."""
-        workflow_config = self._get_workflow_config(event_data.workflow_type)
+        workflow_config = self._get_workflow_config(event_data.integrate_type)
         return self._execute_event_processing(event_data, workflow_config)
 
 # shared/artifact_utils.py - Artifact management utilities
@@ -978,7 +978,7 @@ class ArtifactManager:
             "id": generate_artifact_id(),
             "type": artifact_type,
             "content": content,
-            "workflow_type": workflow_context.get("workflow_type"),
+            "integrate_type": workflow_context.get("integrate_type"),
             "timestamp": datetime.now().isoformat(),
             "metadata": generate_artifact_metadata(content, artifact_type)
         }
@@ -986,7 +986,7 @@ class ArtifactManager:
     @staticmethod
     def validate_artifact(artifact: Dict) -> bool:
         """Validate artifact structure and content."""
-        required_fields = ["id", "type", "content", "workflow_type", "timestamp"]
+        required_fields = ["id", "type", "content", "integrate_type", "timestamp"]
         return all(field in artifact for field in required_fields)
 ```
 
@@ -1032,8 +1032,8 @@ New architecture includes comprehensive testing:
 class TestWorkflowIntegration:
     def test_generic_event_processing(self):
         """Test that all workflows use the same event processing logic."""
-        for workflow_type in SUPPORTED_WORKFLOWS:
-            event_data = create_test_event(workflow_type)
+        for integrate_type in SUPPORTED_WORKFLOWS:
+            event_data = create_test_event(integrate_type)
             result = process_ui_event_generic(event_data)
             assert result is not None
             assert "artifact" in result
@@ -1212,15 +1212,15 @@ Phase 5.7 addressed critical implementation inconsistencies that were preventing
 ### Critical Issues Resolved ✅
 
 #### **1. Function Signature Inconsistencies Fixed (11 Files)**
-**Problem**: `execute_adapter_workflow` and `execute_agentic_workflow` called with incorrect `workflow_ID` parameter instead of `workflow_config`.
+**Problem**: `execute_workflow` and `execute_agentic_workflow` called with incorrect `workflow_ID` parameter instead of `workflow_config`.
 
 **Root Cause**: Parameter naming mismatch between function definitions and calls.
 ```python
 # BEFORE: Incorrect parameter passing
-result = await execute_adapter_workflow(workflow_ID=workflow_id, ...)
+result = await execute_workflow(workflow_ID=workflow_id, ...)
 
 # AFTER: Correct parameter passing
-result = await execute_adapter_workflow(workflow_config=workflow_config, ...)
+result = await execute_workflow(workflow_config=workflow_config, ...)
 ```
 
 **Files Fixed**: 11 workflow adapter files

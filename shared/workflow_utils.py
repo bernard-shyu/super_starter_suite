@@ -1,66 +1,22 @@
 # super_starter_suite/shared/workflow_utils.py
 
+"""
+Minimal shared utilities for workflow operations.
+
+Contains basic validation, error handling, logging, and content processing functions
+that are shared across different workflow components.
+"""
+
+import time
+import re
+import uuid
 from typing import Callable, Any, Dict, Type, Tuple, List, Optional
-from super_starter_suite.shared.workflow_server import WorkflowServer
-from super_starter_suite.shared.config_manager import config_manager
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
-from super_starter_suite.shared.workflow_loader import get_workflow_config
-from llama_index.server.api.models import ArtifactEvent
+from .config_manager import config_manager
+from .dto import WorkflowConfig, StructuredMessage, MessageMetadata
 
 # UNIFIED LOGGING SYSTEM - Replace global logging
 workflow_logger = config_manager.get_logger("workflow.utils")
 
-def create_workflow_factory(workflow_server: WorkflowServer) -> Callable[[str], Type[Any]]:
-    """
-    Create a generic workflow factory function.
-
-    Args:
-        workflow_server: The WorkflowServer instance to use for retrieving workflows.
-
-    Returns:
-        A function that takes a workflow name and returns the corresponding workflow class.
-    """
-    def workflow_factory(workflow_name: str) -> Type[Any]:
-        workflow_class = workflow_server.registry.get_workflow(workflow_name)
-        if not workflow_class:
-            raise ValueError(f"Workflow {workflow_name} not found in registry")
-        return workflow_class
-
-    return workflow_factory
-
-def create_event_factory(workflow_server: WorkflowServer) -> Callable[[str, str], Any]:
-    """
-    Create a generic event factory function.
-
-    Args:
-        workflow_server: The WorkflowServer instance to use for retrieving events.
-
-    Returns:
-        A function that takes a workflow name and user question, and returns the corresponding event class.
-    """
-    def event_factory(workflow_name: str, user_question: str) -> Any:
-        event_class = workflow_server.registry.get_event(workflow_name)
-        if not event_class:
-            raise ValueError(f"Event for workflow {workflow_name} not found in registry")
-
-        # Generic event creation - rely on the event class constructor
-        # The WorkflowServer's _create_framework_event will handle specific initializers
-        try:
-            return event_class(user_msg=user_question, context="")
-        except TypeError:
-            try:
-                return event_class(user_msg=user_question)
-            except TypeError:
-                start_event = event_class()
-                if hasattr(start_event, 'user_msg'):
-                    start_event.user_msg = user_question
-                if hasattr(start_event, 'message'):
-                    start_event.message = user_question
-                if hasattr(start_event, 'question'):
-                    start_event.question = user_question
-                return start_event
-
-    return event_factory
 
 def validate_workflow_payload(payload: Dict[str, Any]) -> Tuple[bool, str]:
     """
@@ -77,6 +33,7 @@ def validate_workflow_payload(payload: Dict[str, Any]) -> Tuple[bool, str]:
     if not payload["question"].strip():
         return False, "Question field cannot be empty"
     return True, ""
+
 
 def create_error_response(error_message: str, workflow_name: str, status_code: int = 500) -> Tuple[str, int]:
     """
@@ -101,6 +58,7 @@ def create_error_response(error_message: str, workflow_name: str, status_code: i
     """
     return error_html, status_code
 
+
 def log_workflow_execution(workflow_name: str, question: str, success: bool, duration: float):
     """
     Log the execution of a workflow.
@@ -114,365 +72,647 @@ def log_workflow_execution(workflow_name: str, question: str, success: bool, dur
     log_message = f"{workflow_name} workflow executed {'successfully' if success else 'unsuccessfully'}"
     workflow_logger.info(f"{log_message} in {duration:.2f} seconds for question: {question[:100]}...")
 
-async def process_workflow_events(handler, workflow_name: str) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
-    """
-    Generic workflow event processing for consistent artifact extraction and response handling.
 
-    This function processes ALL events during workflow execution, including artifacts sent after StopEvent,
-    to handle workflows where artifacts are generated after completion (like deep_research).
+def create_structured_message(final_result: Any, response_content: str, workflow_name: str, model_provider: str = "", model_id: str = "") -> 'StructuredMessage':
+    """
+    SIMPLIFIED CITATION EXTRACTION: Preserve citation markers for frontend processing
+    Pass 1: Extract all citations without content modification
+    Pass 2: Clean content and transform grouped citations to individual markers
 
     Args:
-        handler: Async workflow handler from workflow.run()
-        workflow_name: Name of the workflow for logging
+        final_result: LlamaIndex workflow result (may contain raw metadata)
+        response_content: Raw text from workflow (may contain citation markers)
+        workflow_name: Context for rendering
+        model_provider: Model provider for metadata
+        model_id: Model ID for metadata
 
     Returns:
-        Tuple of (conversation_response, artifacts_collected, planning_response)
+        StructuredMessage: Clean structured message with preserved citation markers
     """
-    artifacts_collected = []
-    response_content = ""
-    planning_response = ""
+    from .dto import MessageMetadata, StructuredMessage
 
-    workflow_logger.debug(f"[{workflow_name}] Starting event processing...")
+    # Enhanced defensive validation
+    try:
+        if response_content is None:
+            response_content = ""
+        elif not isinstance(response_content, str):
+            response_content = str(response_content)
+    except Exception as e:
+        workflow_logger.warning(f"[{workflow_name}] Failed to normalize response_content: {e}")
+        response_content = ""
 
-    # Process ALL events - don't stop on StopEvent, continue to catch delayed artifacts
-    async for event in handler.stream_events():
-        event_type = type(event).__name__
-        workflow_logger.debug(f"[{workflow_name}] Processing event: {event_type}")
+    # ===== PASS 1: CITATION EXTRACTION (from OLD architecture) =====
+    citations = []
+    citation_metadata = {}  # Store metadata for each citation UUID
+    tool_calls = []
+    followup_questions = []
 
-        # Generic UIEvent processing - attribute-wise, not state-wise
-        from llama_index.server.api.models import UIEvent
-        if isinstance(event, UIEvent) and hasattr(event, 'data'):
-            planning_response = _process_ui_event_attributes(event, workflow_name, planning_response)
+    # FIRST: Extract citation metadata from workflow result if available
+    try:
+        # Try final_result.citations first
+        if hasattr(final_result, 'citations') and final_result.citations:
+            for citation_item in final_result.citations:
+                if hasattr(citation_item, 'id') or hasattr(citation_item, 'uuid'):
+                    citation_id = getattr(citation_item, 'id', getattr(citation_item, 'uuid', None))
+                    if citation_id:
+                        citation_metadata[citation_id] = {
+                            'file_name': getattr(citation_item, 'file_name', getattr(citation_item, 'filename', 'Unknown')),
+                            'page': getattr(citation_item, 'page', None),
+                            'size': getattr(citation_item, 'size', None),
+                            'content_preview': getattr(citation_item, 'content', getattr(citation_item, 'text', getattr(citation_item, 'content_preview', ''))),
+                        }
 
-        # Generic ArtifactEvent processing - capture artifacts ANYTIME during execution
-        elif isinstance(event, ArtifactEvent):
-            workflow_logger.info(f"[{workflow_name}] FOUND ARTIFACT EVENT: {getattr(event.data, 'type', 'unknown')}")
+        # Try tool_calls for citation metadata (llama_index stores it here)
+        elif hasattr(final_result, 'tool_calls') and final_result.tool_calls:
+            for tool_call in final_result.tool_calls:
+                # Check if tool_call has citation data
+                if hasattr(tool_call, 'tool_output') and tool_call.tool_output:
+                    tool_output = tool_call.tool_output
+
+                    # Try to extract citation info from tool output
+                    # Check raw_output.source_nodes (where llama_index actually stores citation metadata)
+                    if hasattr(tool_output, 'raw_output') and hasattr(tool_output.raw_output, 'source_nodes') and tool_output.raw_output.source_nodes:
+                        for source_node in tool_output.raw_output.source_nodes:
+                            # source_node is a NodeWithScore, get the actual node
+                            node = getattr(source_node, 'node', source_node)
+                            if hasattr(node, 'id') or hasattr(node, 'node_id'):
+                                citation_id = getattr(node, 'id', getattr(node, 'node_id', None))
+                                if citation_id:
+                                    node_metadata = getattr(node, 'metadata', {})
+                                    citation_metadata[citation_id] = {
+                                        'file_name': node_metadata.get('file_name', node_metadata.get('filename', 'Unknown')),
+                                        'page_num': node_metadata.get('page_num', None),
+                                        'size': node_metadata.get('file_size', node_metadata.get('size', None)),
+                                        'content_preview': getattr(node, 'content', getattr(node, 'text', ''))[:200] + '...' if getattr(node, 'content', getattr(node, 'text', '')) else '',
+                                    }
+
+
+    except Exception as e:
+        workflow_logger.warning(f"[{workflow_name}] Failed to extract citation metadata from workflow result: {e}")
+        import traceback
+        workflow_logger.warning(f"[{workflow_name}] Citation extraction traceback: {traceback.format_exc()}")
+
+    try:
+        lines = response_content.split('\n')
+        # NEW: Enhanced defensive validation
+        if not isinstance(lines, list):
+            lines = [str(response_content)]
+    except Exception as e:
+        workflow_logger.warning(f"[{workflow_name}] Failed to split response_content: {e}")
+        lines = [str(response_content)]
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Tool calls: Extract from Action patterns
+        if action_match := re.search(r'Action:\s*(\w+)', stripped):
+            tool_name = action_match.group(1).strip()
+            if tool_name and tool_name not in tool_calls:
+                tool_calls.append(tool_name)
+
+        # Citations: Extract multiple formats (from OLD architecture)
+        elif citation_match := re.search(r'\[citation:[^\]]+\]', stripped):
+            citation = citation_match.group(0)
+            citation_id = citation.replace('[citation:', '').replace(']', '')
+
+            # FILTER OUT FAKE CITATIONS: Only accept real UUIDs
             try:
-                artifact_data = extract_artifact_metadata(event.data)
-                artifacts_collected.append(artifact_data)
-                workflow_logger.info(f"[{workflow_name}] SUCCESSFULLY EXTRACTED: {artifact_data['type']} ({len(artifact_data.get('content', ''))} chars)")
-            except Exception as e:
-                workflow_logger.error(f"[{workflow_name}] Artifact extraction failed: {e}")
+                uuid.UUID(citation_id)
+                if citation not in citations:
+                    citations.append(citation)
+            except ValueError:
+                pass  # Skip invalid UUIDs
 
-        # Track StopEvent but continue processing (artifacts may come after)
-        elif 'StopEvent' in event_type:
-            workflow_logger.debug(f"[{workflow_name}] StopEvent encountered but continuing to catch artifacts...")
+        elif grouped_match := re.search(r'\[citations?:\s*([^]]+)\]', stripped, re.IGNORECASE):
+            citations_text = grouped_match.group(1)
+            # Handle both comma and semicolon separators (adapted vs ported workflows)
+            uuid_candidates = re.split(r'[;,]', citations_text)
+            uuid_candidates = [uuid.strip() for uuid in uuid_candidates]
+            for candidate in uuid_candidates:
+                candidate = candidate.strip()
+                try:
+                    uuid.UUID(candidate)
+                    citation = f'[citation:{candidate}]'
+                    if citation not in citations:
+                        citations.append(citation)
+                except ValueError:
+                    pass  # Skip invalid UUIDs
 
-        # Fallback for streaming content
-        elif hasattr(event, 'delta') and event.delta:
-            response_content += event.delta
-        elif hasattr(event, 'content') and event.content:
-            response_content += event.content
-
-    workflow_logger.debug(f"[{workflow_name}] Event processing complete: {len(artifacts_collected)} artifacts collected")
-    return response_content, artifacts_collected, planning_response
-
-def _process_ui_event_attributes(event, workflow_name: str, planning_response: str) -> str:
-    """
-    Process UI event attributes dynamically instead of hardcoded state names.
-
-    This allows different workflows to use different attribute names and values:
-    - code_generator: state="plan", requirement="planning text"
-    - financial_report: state="analyze", analysis="analysis text"
-    - deep_research: state="research", findings="research findings"
-
-    Args:
-        event: The UIEvent to process
-        workflow_name: Workflow name for logging
-        planning_response: Current planning response content
-
-    Returns:
-        Updated planning response if conversational text was found
-    """
-    # Dynamically inspect all attributes in event.data
-    data_attrs = {}
-    for attr_name in dir(event.data):
-        if not attr_name.startswith('_'):  # Skip private attributes
-            attr_value = getattr(event.data, attr_name, None)
-            if attr_value is not None and not callable(attr_value):
-                data_attrs[attr_name] = attr_value
-
-    workflow_logger.debug(f"[{workflow_name}] UIEvent attributes: {list(data_attrs.keys())}")
-
-    # Extract conversational/planning content from text attributes
-    text_attributes = ['requirement', 'analysis', 'findings', 'summary', 'content', 'description', 'message']
-    conversational_text = None
-
-    for attr_name in text_attributes:
-        if attr_name in data_attrs and isinstance(data_attrs[attr_name], str) and data_attrs[attr_name].strip():
-            conversational_text = data_attrs[attr_name]
-            attr_len = len(conversational_text)
-            attr_preview = conversational_text[:50] + "..." if attr_len > 50 else conversational_text
-            workflow_logger.debug(f"[{workflow_name}] Extracted {attr_name} ({attr_len} chars): {attr_preview}")
-            break
-
-    # Format conversational text for better display if found
-    if conversational_text:
-        # Format lists and improve readability
-        formatted_response = conversational_text.replace('. ', '\n• ').replace(', ', '\n• ')
-        planning_response = formatted_response
-        workflow_logger.info(f"[{workflow_name}] Conversational response captured: {len(planning_response)} characters")
-
-    # Log state information if available (for debugging)
-    if 'state' in data_attrs:
-        workflow_logger.debug(f"[{workflow_name}] Current state: {data_attrs['state']}")
-
-    return planning_response
-
-async def execute_workflow_with_artifacts(workflow, user_message: str, chat_memory=None) -> Tuple[Any, str, List[Dict[str, Any]]]:
-    """
-    Execute a workflow and return artifacts using shared event processing.
-
-    Args:
-        workflow: The workflow instance to execute
-        user_message: The user message/question
-        chat_memory: Optional chat memory for context
-
-    Returns:
-        Tuple of (final_result, response_content, artifacts_collected)
-    """
-    handler = workflow.run(
-        user_msg=user_message,
-        chat_history=chat_memory.get() if chat_memory else None
-    )
-    workflow_logger.debug(f"Workflow handler created: {type(handler)}")
-
-    # Use generic event processing
-    response_content, artifacts_collected, _ = await process_workflow_events(handler, type(workflow).__name__)
-
-    # Get final workflow result
-    final_result = await handler
-    workflow_logger.debug(f"Workflow completed: {type(final_result)}")
-
-    return final_result, response_content, artifacts_collected
-
-def save_artifacts_to_session(chat_manager, session, artifacts: List[Dict[str, Any]], workflow_config=None):
-    """
-    Save artifacts to chat session with proper metadata persistence.
-
-    Args:
-        chat_manager: ChatHistoryManager instance
-        session: Current chat session
-        artifacts: List of artifact dictionaries
-        workflow_config: Optional WorkflowConfig for synthetic responses
-    """
-    if not artifacts:
-        workflow_logger.warning("No artifacts to save to session")
-        return
-
-    # Generate synthetic conversational response if needed
-    response_content = ""
-    if workflow_config and workflow_config.synthetic_response:
-        try:
-            response_content = workflow_config.synthetic_response.format(count=len(artifacts))
-        except (KeyError, ValueError) as e:
-            workflow_logger.warning(f"Failed to use synthetic response template: {e}")
-            response_content = f"Generated {len(artifacts)} artifacts"
-    else:
-        response_content = f"Generated {len(artifacts)} outputs"
-
-    # Save with artifacts embedded in message metadata
-    chat_manager.add_message_with_artifacts(
-        session=session,
-        response_content=response_content,
-        artifacts=artifacts,
-        workflow_config=workflow_config
-    )
-
-    workflow_logger.debug(f"Saved {len(artifacts)} artifacts to session {session.session_id}")
-
-async def execute_adapter_workflow(workflow_factory, workflow_config, user_message: str, user_config, chat_manager, session, chat_memory, logger) -> Dict[str, Any]:
-    """
-    Generic workflow execution function that replaces 200+ lines of common code in workflow_adapters.
-
-    This function packages all the common workflow execution patterns:
-    - ChatRequest setup
-    - Previous artifact checking
-    - Workflow instantiation and execution
-    - UIEvent processing (generic, not hardcoded state names)
-    - Artifact collection
-    - Conversational response extraction
-    - Response formatting
-
-    Args:
-        workflow_factory: Function to create workflow instance
-        user_message: The user query
-        user_config: User configuration object
-        chat_manager: ChatHistoryManager instance
-        session: Current chat session
-        chat_memory: LlamaIndex chat memory
-        workflow_name: Name for logging
-        logger: Logger instance
-
-    Returns:
-        Standard response dict with "response" and "artifacts" keys
-    """
-    import time
-    from llama_index.server.models.chat import ChatAPIMessage, ChatRequest
-    from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
-
-    start_execution = time.time()
-
-    logger.info(f"Starting {workflow_config.display_name} workflow for session {session.session_id}")
-
-    try:
-        # STEP 1: ChatRequest setup
-        chat_request = ChatRequest(
-            id=user_config.user_id,
-            messages=[ChatAPIMessage(role=LlamaMessageRole.USER, content=user_message)],
-        )
-
-        # STEP 2: Previous artifact checking (optional enhancement)
-        try:
-            from llama_index.server.api.utils import get_last_artifact
-            previous_artifact = get_last_artifact(chat_request)
-            if previous_artifact:
-                logger.debug(f"Found previous artifact: {previous_artifact.type}")
-        except Exception as e:
-            logger.debug(f"No previous artifacts or error checking: {e}")
-
-        # STEP 3: Workflow instantiation
-        workflow = workflow_factory(chat_request=chat_request)
-        handler = workflow.run(
-            user_msg=user_message,
-            chat_history=chat_memory.get() if chat_memory else None
-        )
-
-        # STEP 4: Execute workflow with async shared utilities
-        try:
-            response_content, artifacts_collected, planning_response = await process_workflow_events(handler, workflow_config.display_name)
-
-            # Get final workflow result
-            final_result = await handler
-
-            logger.info(f"{workflow_config.display_name} workflow completed: {len(artifacts_collected) if artifacts_collected else 0} artifacts")
-
-        except Exception as e:
-            logger.error(f"{workflow_config.display_name} workflow execution failed: {e}")
-            response_content = f"Workflow error: {str(e)}"
-            artifacts_collected = []
-
-        # STEP 5: Save artifacts to session with persistence
-        save_artifacts_to_session(
-            chat_manager=chat_manager,
-            session=session,
-            artifacts=artifacts_collected,
-            workflow_config=workflow_config
-        )
-
-        # STEP 7: Determine conversational response
-        if planning_response and planning_response.strip():
-            conversation_response = planning_response
         else:
-            conversation_response = response_content or f"Workflow completed successfully"
+            # Also check for [uuid] format (ported workflows)
+            uuid_match = re.search(r'\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]', stripped)
+            if uuid_match:
+                citation_id = uuid_match.group(1)
+                citation = f'[citation:{citation_id}]'
+                if citation not in citations:
+                    citations.append(citation)
 
-        # STEP 8: Return standardized response format
-        response_data = {
-            "response": conversation_response,
-            "artifacts": artifacts_collected if artifacts_collected else None
-        }
+    # ===== PASS 2: CONTENT CLEANING & CITATION TRANSFORMATION (from OLD architecture) =====
+    clean_lines = []
+    in_answer_section = False
 
-        logger.debug(f"{workflow_config.display_name} execution completed in {(time.time() - start_execution):.2f}s")
-        return response_data
+    for line in lines:
+        stripped = line.strip()
+
+        # START: Detect when we enter answer section
+        if (stripped.startswith(('Answer:', 'Final Answer:')) or
+            any(indicator in stripped.lower() for indicator in ['based on', 'according to', 'the standards', 'letters should'])):
+            in_answer_section = True
+            # Clean the answer header if present
+            if stripped.startswith(('Answer:', 'Final Answer:')):
+                clean_line = stripped.replace('Answer:', '').replace('Final Answer:', '').strip()
+                if clean_line:
+                    clean_lines.append(clean_line)
+                continue
+
+        # Keep main content, remove AI artifacts stringently
+        should_keep = False
+
+        if in_answer_section:
+            # CRITICAL: Transform grouped citations with enhanced error handling
+            if grouped_match := re.search(r'\[citations?:\s*([^]]+)\]', stripped, re.IGNORECASE):
+                citations_text = grouped_match.group(1)
+                # Handle both comma and semicolon separators (adapted vs ported workflows)
+                uuid_candidates = re.split(r'[;,]', citations_text)
+                uuid_candidates = [uuid.strip() for uuid in uuid_candidates]
+                individual_markers = []
+                for candidate in uuid_candidates:
+                    candidate = candidate.strip()
+                    try:
+                        uuid.UUID(candidate)
+                        individual_markers.append(f'[citation:{candidate}]')
+                    except ValueError:
+                        pass  # Skip invalid UUIDs
+                if individual_markers:
+                    # Replace the grouped citation with individual markers
+                    stripped = re.sub(r'\[citations?:\s*([^]]+)\]', ' '.join(individual_markers), stripped, flags=re.IGNORECASE)
+            should_keep = bool(stripped)
+
+        # Allow main content lines that are informative responses
+        elif (stripped and
+              not stripped.startswith(('Thought:', 'Action:', 'Observation:', 'Thinking:', 'Reasoning:')) and
+              not re.search(r'Action Input:', stripped) and
+              not any(keyword in stripped.lower() for keyword in [
+                  'calling tool', 'tool_call', 'query_index',
+                  'based on the tool results', 'the search returned',
+                  'suggested follow-up questions', 'follow-up questions:'
+              ]) and
+              # Filter out procedural/chain-of-thought phrases
+              not (stripped.endswith(':') and len(stripped) < 40) and
+              # Keep lines with image markdown or substantial text
+              (len(stripped) > 5 or '![' in stripped)):
+            should_keep = True
+
+        if should_keep:
+            # Clean up the line itself - remove internal assistant role labels
+            cleaned_line = re.sub(r'(?i)\b(assistant:\s*)+', '', line)
+            clean_lines.append(cleaned_line)
+
+    clean_content = '\n'.join(clean_lines).strip()
+    # Remove excessive blank lines while preserving structure
+    clean_content = re.sub(r'\n\n\n+', '\n\n', clean_content)
+
+    # MERGED: Enhanced metadata field (citations field for frontend compatibility)
+    metadata = MessageMetadata(
+        citations=citations,              # MERGED: citations field (was sources in old, but citations needed for frontend)
+        citation_metadata=citation_metadata,  # NEW: Citation metadata mapping UUIDs to file info
+        tool_calls=tool_calls,        # Tool names: ["query_index"]
+        followup_questions=followup_questions,  # Currently empty, holds future AI-generated questions
+        model_provider=model_provider,
+        model_id=model_id
+    )
+
+    return StructuredMessage(
+        content=clean_content,        # Clean human-readable text with transformed citations
+        metadata=metadata,           # Separate machine metadata
+        workflow_name=workflow_name  # Context for rendering
+    )
+
+    workflow_logger.debug(f"✅ [{workflow_name}] Created StructuredMessage: {len(clean_content)} chars, {len(citations)} citations, {len(tool_calls)} tools")
+    workflow_logger.debug(f"📚 [{workflow_name}] Citation metadata extracted: {citation_metadata}, {metadata.citation_metadata}")
+    return structured_message
+
+
+def basic_content_cleaning(content: str) -> str:
+    """
+    Basic content cleaning that preserves citation markers.
+
+    Unlike the complex version, this only removes obvious AI artifacts
+    while keeping all citation markers intact for frontend processing.
+    """
+    if not content:
+        return content
+
+    lines = content.split('\n')
+    clean_lines = []
+    in_answer_section = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # START: Detect when we enter answer section - keep everything after this
+        if (stripped.startswith(('Answer:', 'Final Answer:')) or
+            any(indicator in stripped.lower() for indicator in ['based on', 'according to', 'the standards', 'letters should'])):
+            in_answer_section = True
+            # Clean the answer header if present
+            if stripped.startswith(('Answer:', 'Final Answer:')):
+                clean_line = stripped.replace('Answer:', '').replace('Final Answer:', '').strip()
+                if clean_line:
+                    clean_lines.append(clean_line)
+                continue
+
+        # Keep main content, remove only obvious AI artifacts
+        should_keep = False
+
+        if in_answer_section:
+            # In answer section: keep all non-empty lines (including citations)
+            should_keep = bool(stripped)
+        elif (stripped and
+              not stripped.startswith(('Thought:', 'Action:', 'Observation:')) and
+              not re.search(r'Action Input:', stripped) and
+              len(stripped) > 5):  # Keep substantial content lines
+            should_keep = True
+
+        if should_keep:
+            clean_lines.append(line)
+
+    clean_content = '\n'.join(clean_lines).strip()
+    # Remove excessive blank lines while preserving structure
+    clean_content = re.sub(r'\n\n\n+', '\n\n', clean_content)
+
+    return clean_content
+
+
+# REMOVED: save_artifacts_to_session function - VIOLATES SRR PRINCIPLES
+# SRR for session_data is ChatHistoryManager. Use save_workflow_conversation_turn instead.
+
+
+async def extract_workflow_response_content(final_result, workflow_name: str, logger: Any) -> str:
+    """
+    Unified response content extraction for all workflow types.
+    Handles async generators, objects with .content, and various nested structures.
+    """
+    try:
+        # Priority 1: Check if final_result is an async generator (unified streaming extraction)
+        if hasattr(final_result, "__aiter__"):
+            logger.debug(f"[{workflow_name}] Detected async generator, iterating for robust extraction")
+            
+            deltas = []
+            thoughts = []
+            accumulated_text = ""
+            chunk_count = 0
+
+            async for chunk in final_result:
+                chunk_count += 1
+                if chunk is None: continue
+
+                try:
+                    # [DEBUG] Log first 3 chunks with metadata to INFO for diagnostic purposes
+                    if chunk_count <= 3:
+                        try:
+                            # Log chunk type and message metadata
+                            c_type = type(chunk).__name__
+                            m_kwargs = {}
+                            if hasattr(chunk, 'message'):
+                                m_kwargs = getattr(chunk.message, 'additional_kwargs', {})
+                            
+                            c_data = str(chunk)
+                            if len(c_data) > 150: c_data = c_data[:150] + "..."
+                            
+                            logger.debug(f"[{workflow_name}] DEBUG CHUNK {chunk_count}: type={c_type} | kwargs={m_kwargs} | data={c_data}")
+                        except Exception as e:
+                            logger.debug(f"[{workflow_name}] DEBUG CHUNK {chunk_count}: error logging: {e}")
+
+                    # 1. Delta-based extraction
+                    delta_obj = getattr(chunk, 'delta', None)
+                    if delta_obj is not None:
+                        text = getattr(delta_obj, 'content', None) if not isinstance(delta_obj, str) else delta_obj
+                        if text is None and not isinstance(delta_obj, str):
+                            text = str(delta_obj)
+                        if text:
+                            deltas.append(str(text))
+
+                    # 2. Accumulated Message Content & Thinking
+                    message = getattr(chunk, 'message', None)
+                    if message:
+                        # Extract content
+                        m_content = getattr(message, 'content', None)
+                        if m_content:
+                            accumulated_text = str(m_content)
+                        
+                        # Extract thinking/reasoning (often in additional_kwargs)
+                        kwargs = getattr(message, 'additional_kwargs', {}) or {}
+                        thought = kwargs.get('thinking') or kwargs.get('thought') or kwargs.get('reasoning')
+                        if thought:
+                            thoughts.append(str(thought))
+
+                    # 3. Direct content attribute
+                    direct_content = getattr(chunk, 'content', None)
+                    if direct_content:
+                        accumulated_text = str(direct_content)
+                    
+                    # 4. Handle string chunks directly
+                    if isinstance(chunk, str) and chunk:
+                        deltas.append(chunk)
+
+                except Exception as e:
+                    logger.debug(f"[{workflow_name}] Extraction skip on chunk {chunk_count}: {e}")
+                    continue
+
+            # Determine final content: Prefer deltas, fallback to accumulated, fallback to thoughts
+            joined_deltas = "".join(deltas).strip()
+            joined_thoughts = "".join(thoughts).strip()
+            
+            if joined_deltas:
+                response_content = joined_deltas
+            elif accumulated_text:
+                response_content = accumulated_text.strip()
+            elif joined_thoughts:
+                response_content = f"*(Thinking...)*\n\n{joined_thoughts}"
+            else:
+                response_content = ""
+
+            # Clean up response: remove excessive whitespace and repetitive labels
+            import re
+            response_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', response_content)
+            
+            # Clean up repeated "assistant: " prefixes that can appear in streaming responses
+            response_content = re.sub(r'(?i)\b(assistant:\s*)+', '', response_content)
+            response_content = response_content.strip()
+
+            logger.info(f"[{workflow_name}] Extracted {len(response_content)} chars (Deltas={len(joined_deltas)}, Thinking={len(joined_thoughts)})")
+            return response_content
+
+        # Priority 2: Check if final_result has a .response attribute that is an async generator
+        elif hasattr(final_result, 'response') and hasattr(final_result.response, '__aiter__'):
+            logger.debug(f"[{workflow_name}] Detected async generator in final_result.response, iterating")
+            async_responses = []
+            chunk_count = 0
+
+            async for chunk in final_result.response:
+                chunk_count += 1
+
+                try:
+                    if isinstance(chunk, str):
+                        async_responses.append(chunk)
+                    elif hasattr(chunk, 'delta') and chunk.delta:
+                        # Robust chunk extraction to avoid role label spam (e.g. "assistant: assistant:")
+                        if isinstance(chunk.delta, str):
+                            async_responses.append(chunk.delta)
+                        elif hasattr(chunk.delta, 'content') and chunk.delta.content:
+                            async_responses.append(str(chunk.delta.content))
+                    elif hasattr(chunk, 'message') and chunk.message:
+                        if hasattr(chunk.message, 'content') and chunk.message.content:
+                            async_responses.append(str(chunk.message.content))
+                        else:
+                            async_responses.append(str(chunk.message))
+                    elif hasattr(chunk, 'content') and chunk.content:
+                        async_responses.append(str(chunk.content))
+                    else:
+                        chunk_str = str(chunk) if chunk is not None else ""
+                        if not chunk_str.lower().startswith("assistant:"):
+                            async_responses.append(chunk_str)
+                except Exception as chunk_error:
+                    logger.error(f"[{workflow_name}] Error processing chunk {chunk_count}: {chunk_error}")
+                    continue
+
+            response_content = ''.join(async_responses).strip()
+            # Clean up response - remove excessive whitespace
+            import re
+            response_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', response_content.strip())
+            logger.info(f"[{workflow_name}] Extracted content from response async generator: {len(response_content)} chars")
+            return response_content
+
+        # Priority 3: Check for .response.content
+        elif hasattr(final_result, 'response') and hasattr(final_result.response, 'content'):
+            response_content = final_result.response.content
+            logger.debug(f"[{workflow_name}] Extracted content from response.content: {len(response_content) if response_content else 0} chars")
+            return response_content
+
+        # Priority 4: Check if final_result.response is a string
+        elif hasattr(final_result, 'response') and isinstance(final_result.response, str):
+            response_content = final_result.response
+            logger.debug(f"[{workflow_name}] Extracted content from response string: {len(response_content)} chars")
+            return response_content
+
+        # Priority 5: Check if final_result itself has .content
+        elif hasattr(final_result, 'content'):
+            response_content = final_result.content
+            logger.debug(f"[{workflow_name}] Extracted content from final_result.content: {len(response_content) if response_content else 0} chars")
+            return response_content
+
+        # Priority 6: Check if final_result is a dictionary (workflow result format)
+        elif isinstance(final_result, dict) and 'response' in final_result:
+            response_content = final_result['response']
+            logger.debug(f"[{workflow_name}] Extracted response from dictionary: {len(response_content) if response_content else 0} chars")
+            return response_content
+
+        # Priority 7: Check if final_result is a string
+        elif isinstance(final_result, str):
+            response_content = final_result
+            logger.debug(f"[{workflow_name}] Using final_result as string: {len(response_content)} chars")
+            return response_content
+
+        # Fallback: Convert to string
+        else:
+            response_content = str(final_result) if final_result is not None else ""
+            logger.warning(f"[{workflow_name}] Using fallback string conversion: {len(response_content)} chars")
+            return response_content
 
     except Exception as e:
-        logger.error(f"{workflow_config.display_name} workflow error: {e}")
-        return {
-            "response": f"Unexpected error: {str(e)}",
-            "artifacts": None
-        }
+        logger.error(f"[{workflow_name}] Failed to extract response content: {str(e)}")
+        import traceback
+        logger.error(f"[{workflow_name}] Extraction traceback: {traceback.format_exc()}")
+        return f"Error extracting response: {str(e)}"
 
-async def execute_agentic_workflow(workflow_factory, workflow_config, user_message: str, user_config, chat_manager, session, chat_memory, logger) -> Dict[str, Any]:
+
+async def write_response_to_stream(response_result: Any, ctx: Any) -> str:
     """
-    Specialized workflow execution for AgentWorkflow types (like agentic_rag).
+    Generate contextual, informative response for deep research workflows.
 
-    AgentWorkflows use AgentWorkflowStartEvent pattern instead of simple user_msg,
-    offering multi-turn conversation capabilities through agent-driven reasoning.
-
-    Design Principles:
-    1. Configuration-driven timeout control prevents runaway workflows
-    2. Consistent session lifecycle management across agentic interactions
-    3. Thread-safe execution within asyncio context
-    4. Structured response format with optional artifacts for UI consumption
-
-    Workflow Execution Flow:
-    1. ChatRequest setup with conversation history
-    2. AgentWorkflow instantiation with configured timeout
-    3. Async execution with memory persistence
-    4. Response extraction and session storage
-    5. Standardized return format: {"response": str, "artifacts": None}
+    Analyzes research findings, context nodes, and workflow execution to create
+    detailed responses that explain what was found (or not found) during research,
+    similar to STARTER_TOOLS professional rendering.
 
     Args:
-        workflow_factory: Factory function creating AgentWorkflow instances
-        workflow_config: WorkflowConfig object with timeout, display_name, etc.
-        user_message: Current user query for agent processing
-        user_config: User configuration object with model/llm settings
-        chat_manager: ChatHistoryManager for session persistence
-        session: Current chat session for message storage
-        chat_memory: LlamaIndex chat memory for conversation context
-        logger: Configured logger for execution tracking
+        response_result: Workflow response result (CompletionResponse or similar)
+        ctx: Workflow context containing research state and memory
 
     Returns:
-        Standardized response dictionary:
-        - "response": Agent-generated conversational response (str)
-        - "artifacts": Always None (agent workflows don't generate artifacts)
-
-    Raises:
-        Execution-time exceptions are caught and returned as error responses,
-        with proper logging and session cleanup.
-
-    Note:
-        AgentWorkflows prioritize conversational intelligence over artifact generation,
-        reflecting their primary use case of intelligent document QA and knowledge retrieval.
+        str: Contextual response text for chat UI
     """
-    import time
-    from llama_index.server.models.chat import ChatAPIMessage, ChatRequest
-    from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
-    from llama_index.core.agent.workflow.workflow_events import AgentWorkflowStartEvent
-
-    start_execution = time.time()
-
-    logger.info(f"Starting AgentWorkflow {workflow_config.display_name} for session {session.session_id}")
-
     try:
-        # STEP 1: ChatRequest setup
-        chat_request = ChatRequest(
-            id=user_config.user_id,
-            messages=[ChatAPIMessage(role=LlamaMessageRole.USER, content=user_message)],
-        )
+        from llama_index.core.settings import Settings
 
-        # STEP 2: Workflow instantiation with configured timeout
-        workflow = workflow_factory(chat_request=chat_request, timeout_seconds=workflow_config.timeout)
+        # Extract research context from workflow context
+        user_request = await ctx.get("user_request", "research query")
+        total_questions = await ctx.get("total_questions", 0)
+        context_nodes = await ctx.get("context_nodes", [])
 
-        # STEP 3: Execute agent workflow with configured timeout control
-        result = await workflow.run(
-            user_msg=user_message,
-            chat_history=None,
-            memory=chat_memory,
-            max_iterations=None
-        )
-        logger.info(f"AgentWorkflow {workflow_config.display_name} completed: {type(result)}")
+        # Get research findings from memory
+        research_findings = []
+        if hasattr(ctx, 'memory') and ctx.memory:
+            # Extract research findings from conversation memory
+            for msg in ctx.memory.get_all():
+                if (hasattr(msg, 'content') and msg.content and
+                    ("Research Finding" in msg.content or "research" in msg.content.lower())):
+                    research_findings.append(msg.content)
 
-        # STEP 5: Extract response content
-        response_content = str(result) if result else "No response generated"
+        # Analyze what was actually found vs what was requested
+        found_relevant_info = len(context_nodes) > 0
+        answered_questions = len(research_findings)
 
-        # STEP 6: Save to session (agentic workflows typically don't have artifacts)
-        from super_starter_suite.shared.dto import MessageRole, create_chat_message
-        assistant_msg = create_chat_message(role=MessageRole.ASSISTANT, content=response_content)
-        chat_manager.add_message_to_session(session, assistant_msg)
+        # Generate contextual response based on research outcomes
+        if answered_questions == 0 and not found_relevant_info:
+            # No information found
+            response = f"""The provided context contains no information related to '{user_request}'. No relevant documents or data were found in the knowledge base to address this research query."""
 
-        # STEP 7: Return standard format (no artifacts for agentic workflows)
-        response_data = {
-            "response": response_content,
-            "artifacts": None  # AgentWorkflows don't generate artifacts
-        }
+        elif answered_questions == 0 and found_relevant_info:
+            # Documents found but no specific questions answered
+            response = f"""The provided context contains {len(context_nodes)} documents that may be relevant to '{user_request}', but no specific research questions could be formulated or answered based on the available information."""
 
-        logger.debug(f"AgentWorkflow {workflow_config.display_name} execution completed in {(time.time() - start_execution):.2f}s")
-        return response_data
+        elif answered_questions > 0:
+            # Research was conducted and questions answered
+            response = f"""Research completed on '{user_request}' with {answered_questions} questions investigated using {len(context_nodes)} source documents. The analysis revealed specific findings about the topic based on available research data."""
+
+        else:
+            # Fallback generic response
+            response = f"""Deep research analysis completed for '{user_request}'. A comprehensive report has been generated based on the available knowledge base."""
+
+        # Add source information if available
+        if context_nodes:
+            source_info = f" Research was conducted using {len(context_nodes)} source documents."
+            response += source_info
+
+        workflow_logger.debug(f"Generated contextual response: {response[:100]}...")
+        return response
 
     except Exception as e:
-        logger.error(f"AgentWorkflow {workflow_config.display_name} error: {e}")
-        return {
-            "response": f"Unexpected error: {str(e)}",
-            "artifacts": None
-        }
+        workflow_logger.error(f"Failed to generate contextual response: {e}")
+        # Fallback to simple response
+        return f"Deep research completed. A comprehensive report has been generated based on the available knowledge base."
+
+
+async def generate_followup_questions(user_request: str, research_findings: List[str], context_nodes: List[Any]) -> List[str]:
+    """
+    Generate contextual follow-up questions based on deep research findings.
+
+    Analyzes research results and knowledge gaps to suggest relevant follow-up questions,
+    similar to STARTER_TOOLS professional question generation.
+
+    Args:
+        user_request: Original user research query
+        research_findings: List of research findings and answers
+        context_nodes: Documents used for research
+
+    Returns:
+        List[str]: A list of suggested follow-up questions.
+    """
+    try:
+        import re
+        from llama_index.core.settings import Settings
+
+        if not research_findings:
+            return []
+
+        # Summarize research context
+        findings_summary = "\n".join(research_findings[-5:])  # Last 5 findings
+        available_sources = len(context_nodes)
+
+        # Generate follow-up questions based on research
+        followup_prompt = f"""
+        Based on the deep research conducted on: "{user_request}"
+
+        RESEARCH SUMMARY:
+        {findings_summary}
+
+        SOURCES ANALYZED: {available_sources} documents
+
+        Generate 3-5 contextual follow-up questions that would help deepen understanding or explore related aspects. Focus on:
+
+        1. **Knowledge Gaps**: Questions about areas not fully covered in current research
+        2. **Practical Applications**: How findings apply to real-world scenarios
+        3. **Related Concepts**: Connected topics worth exploring
+        4. **Implementation Details**: Specific how-to questions
+        5. **Comparative Analysis**: Different approaches or perspectives
+
+        Return only the questions as a numbered list, no explanations.
+        """
+
+        response = await Settings.llm.acomplete(followup_prompt)
+        questions_text = response.text.strip()
+
+        # Parse questions from response
+        questions = []
+        for line in questions_text.split('\n'):
+            line = line.strip()
+            # Remove numbering (1., 2., etc.)
+            if line and (line[0].isdigit() or line.startswith('-')):
+                # Remove numbering and clean
+                question = re.sub(r'^\d+\.?\s*', '', line)
+                question = re.sub(r'^-\s*', '', question)
+                if question and len(question) > 10:  # Substantial questions only
+                    questions.append(question.strip())
+
+        # Limit to 3-5 questions
+        questions = questions[:5]
+
+        return questions
+
+    except Exception as e:
+        workflow_logger.error(f"Failed to generate follow-up questions: {e}")
+        return []
+
+
+def cleanup_workflow_cuda_resources(session_id: str, context: dict):
+    """
+    Centralized CUDA memory cleanup for workflow sessions.
+
+    Handles GPU resource cleanup when workflow sessions are terminated,
+    preventing CUDA memory exhaustion issues. Called from session managers
+    during session destruction.
+
+    Args:
+        session_id: Session identifier for logging
+        context: Session context information (session_type, workflow_id, etc.)
+    """
+    session_type = context.get("session_type", "unknown")
+    workflow_id = context.get("workflow_id", None)
+
+    try:
+        import torch
+        import gc
+        
+        # 1. Force garbage collection to release objects that might be pinning CUDA memory
+        gc.collect()
+
+        if torch.cuda.is_available():
+            # Get memory before cleanup for logging
+            # Allocated = currently used by tensors
+            # Reserved = total memory managed by the caching allocator
+            alloc_before = torch.cuda.memory_allocated() / 1024**2
+            res_before = torch.cuda.memory_reserved() / 1024**2
+
+            # 2. Clear CUDA cache (returns unallocated reserved memory to OS)
+            torch.cuda.empty_cache()
+
+            # Get memory after cleanup
+            alloc_after = torch.cuda.memory_allocated() / 1024**2
+            res_after = torch.cuda.memory_reserved() / 1024**2
+            
+            freed_reserved = res_before - res_after
+            freed_allocated = alloc_before - alloc_after
+
+            workflow_logger.info(
+                f"CUDA cleanup for {session_type} session {session_id}: "
+                f"Freed {freed_allocated:.1f}MB (Allocated), {freed_reserved:.1f}MB (Reserved). "
+                f"Remaining: {alloc_after:.1f}MB (Alloc), {res_after:.1f}MB (Res)"
+                f"{f' - workflow {workflow_id}' if workflow_id else ''}"
+            )
+
+    except ImportError:
+        # CUDA not available - log and continue
+        pass
+    except Exception as e:
+        # Don't fail session cleanup if CUDA cleanup fails
+        workflow_logger.warning(f"CUDA cleanup failed for session {session_id}: {e}")

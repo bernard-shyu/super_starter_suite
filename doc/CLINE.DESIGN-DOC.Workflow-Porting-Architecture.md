@@ -48,7 +48,7 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONRespon
         return JSONResponse({"error": error_msg, "artifacts": None}, 400)
 
     # Execute entire workflow using shared utilities (5 lines)
-    response_data = await execute_adapter_workflow(
+    response_data = await execute_workflow(
         workflow_factory=create_workflow,
         user_message=payload["question"],
         user_config=request.state.user_config,
@@ -90,7 +90,7 @@ def create_workflow(chat_request=None):  # ← Factory function returns Workflow
 ```python
 # super_starter_suite/workflow_adapters/deep_research.py
 from super_starter_suite.STARTER_TOOLS.deep_research.app.workflow import create_workflow  # ← IMPORTS
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
+from super_starter_suite.shared.workflow_utils import execute_workflow
 
 @router.post("/chat")
 @bind_workflow_session(workflow_name="deep-research", artifact_enabled=True)
@@ -100,7 +100,7 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONRespon
         return JSONResponse({"error": error_msg, "artifacts": None}, 400)
 
     # Delegates to shared utilities, imports workflow factory
-    response_data = await execute_adapter_workflow(
+    response_data = await execute_workflow(
         workflow_factory=create_workflow,  # ← Uses imported Pattern A factory
         user_message=payload["question"],
         user_config=request.state.user_config,
@@ -184,7 +184,7 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONRespon
 #### `process_workflow_events(handler, workflow_name) → Tuple[str, List[Dict], Optional[str]]`
 Generic event processing for any workflow type. Processes all events including artifacts emitted after StopEvent.
 
-#### `execute_adapter_workflow(workflow_factory, user_message, ...) → Dict[str, Any]`
+#### `execute_workflow(workflow_factory, user_message, ...) → Dict[str, Any]`
 Complete workflow execution pipeline replacing 200+ lines of per-adapter code.
 
 #### `execute_agentic_workflow(workflow_factory, user_message, ...) → Dict[str, Any]`
@@ -238,8 +238,8 @@ super_starter_suite/
 ### STEP 2: Establishing Porting Architecture
 ```
 # WORKFLOW_ADAPTERS: Thin wrapper delegating to shared utilities
-async def execute_adapter_workflow():
-    return await shared_utils.execute_adapter_workflow(...)
+async def execute_workflow():
+    return await shared_utils.execute_workflow(...)
 
 # WORKFLOW_PORTING: Complete self-contained implementation
 async def chat_endpoint():
@@ -288,7 +288,7 @@ Artifact generation testing, session persistence testing, integration testing.
 | **TOTAL** | **1,210** | **410** | **66%** |
 
 Eliminated duplicate patterns:
-- ChatRequest setup → `execute_adapter_workflow`
+- ChatRequest setup → `execute_workflow`
 - Event streaming logic → `process_workflow_events`
 - Artifact extraction → `extract_artifact_metadata`
 - UIEvent processing → `_process_ui_event_attributes`
@@ -327,7 +327,7 @@ async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONRespon
         return JSONResponse({"error": error_msg, "artifacts": None}, 400)
 
     from super_starter_suite.STARTER_TOOLS.new_workflow.app.workflow import create_workflow
-    response_data = await execute_adapter_workflow(
+    response_data = await execute_workflow(
         workflow_factory=create_workflow,
         user_message=payload["question"],
         user_config=request.state.user_config,

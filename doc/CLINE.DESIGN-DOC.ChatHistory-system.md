@@ -300,10 +300,10 @@ class ChatHistoryManager:
         self.user_config = user_config
         self.storage_path = self._get_storage_path()
 
-    def create_new_session(self, workflow_type: str) -> ChatSession:
+    def create_new_session(self, integrate_type: str) -> ChatSession:
         # Implementation
 
-    def load_session(self, workflow_type: str, session_id: str) -> ChatSession:
+    def load_session(self, integrate_type: str, session_id: str) -> ChatSession:
         # Implementation
 
     def save_session(self, session: ChatSession) -> None:
@@ -389,7 +389,7 @@ Session Reconstruction → LlamaIndex Memory → UI Rendering
 class ChatSession:
     session_id: str
     user_id: str
-    workflow_type: str
+    integrate_type: str
     created_at: datetime
     updated_at: datetime
     title: Optional[str]
@@ -415,7 +415,7 @@ class ChatMessageDTO:
 {
   "session_id": "uuid-string",
   "user_id": "bernard",
-  "workflow_type": "agentic_rag",
+  "integrate_type": "agentic_rag",
   "created_at": "2025-01-14T10:30:00Z",
   "updated_at": "2025-01-14T10:35:00Z",
   "title": "Chat about RAG implementation",
@@ -443,7 +443,7 @@ class ChatMessageDTO:
 CREATE TABLE chat_sessions (
     session_id UUID PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
-    workflow_type VARCHAR(100) NOT NULL,
+    integrate_type VARCHAR(100) NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     title VARCHAR(500),
@@ -463,7 +463,7 @@ CREATE TABLE chat_messages (
 
 -- Indexes for performance
 CREATE INDEX idx_sessions_user ON chat_sessions(user_id);
-CREATE INDEX idx_sessions_workflow ON chat_sessions(workflow_type);
+CREATE INDEX idx_sessions_workflow ON chat_sessions(integrate_type);
 CREATE INDEX idx_messages_session ON chat_messages(session_id);
 ```
 

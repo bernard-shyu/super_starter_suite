@@ -204,11 +204,75 @@ THEME = "dark_modern"
 2. **Start the backend development server**:  `uvicorn super_starter_suite.main:app --port 8000 --reload --host 0.0.0.0 ;`
 
 ___________________________________________________________________________________________________________________________________________________________
+
+# Useful general concept for vib-coding
+
+## DRY PRINCIPLE
+
+The __DRY (Don't Repeat Yourself) principle__ is a fundamental software engineering concept that states:
+> *"Every piece of knowledge must have a single, unambiguous, authoritative representation within a system."*
+
+__Key Points:__
+- __Avoid Code Duplication__: Identical code blocks should be extracted into reusable functions/methods
+- __Single Source of Truth__: Any change should only need to be made in __one place__
+- __Maintainability__: Reduces bugs, simplifies updates, improves readability
+- __Scalability__: Easier to extend and modify behavior
+
+
+## HTTP vs WebSocket endpoints: context flow differences
+
+- **WebSocket binders weren't used because context flow differs:**
+
+```
+    __HTTP Endpoints:__
+    Browser → HTTP Request → FastAPI Middleware → Decorator → Endpoint Function
+                                              ↓
+                                   request.state.user_config/user_id/session_handler
+
+    __WebSocket Endpoints:__
+    Browser → WebSocket CONNECT → Custom Auth Flow → WebSocket Function
+                                          ↓
+                                User ID passed directly in URL params
+```
+
+- **Why WebSocket Skips Binders:**
+1. __🔐 Different Auth Flow__: WebSockets often have custom authentication (client certs, JWT tokens, etc.)
+2. __📝 Direct Parameters__: User ID is passed in URL params (`user_id: str = "Default"`)
+3. __🏗️ Context Creation__: Mock `request_state` is created from URL params instead of HTTP request state
+4. __🔄 Connection Lifecycle__: WebSocket connections are stateful - context flows throughout the connection, not per-message
+
+- **Evidence from Code:**
+
+```python
+@router.websocket("/workflow/{workflow}/session/{session_id}/stream")
+async def chat_websocket_stream_endpoint(
+    websocket: WebSocket,
+    workflow: str, 
+    session_id: str,
+    user_id: str = "Default"  # ← Direct param, no HTTP middleware
+):
+    # Create mock context - no binder needed!
+    mock_request_state = type('MockRequestState', (), {
+        'user_config': UserConfig(user_id=user_id),
+        'user_id': user_id
+    })()
+```
+
+- **Conclusion:**
+    * __HTTP endpoints use binders__ because request.state injection is standardized
+    * __WebSocket endpoints skip binders__ because auth flow is different and context creation happens manually
+    * __My proposal was wrong__ - WebSocket endpoints already handle this correctly by design
+
+
+___________________________________________________________________________________________________________________________________________________________
 # cheat sheet
 ___________________________________________________________________________________________________________________________________________________________
 
 ```
-bvenv ai8;  cd llama_index/bernard.campus/super_starter_suite;               uvicorn main:app --host 0.0.0.0 --port 8000 
-#---------------------------------------------------------------------------------------------------------------------------
+bvenv ai8;  cd llama_index/bernard.campus/super_starter_suite;
+SSL_CERT="--ssl-keyfile=HELPER_TOOLS/SSL_KEY/key.pem --ssl-certfile=HELPER_TOOLS/SSL_KEY/cert.pem" PORT=16899;
+SSL_CERT="" PORT=8000;  uvicorn main:app --host 0.0.0.0 --port $PORT $SSL_CERT
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------
 kvenv ai8;  cd llama_index/bernard.campus/super_starter_suite/rag_indexing;  source gen_ocr_reader.sh
 ```

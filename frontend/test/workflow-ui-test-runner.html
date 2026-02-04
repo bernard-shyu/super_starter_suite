@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow UI Integration Test Runner</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8fafc;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #1e40af;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        .test-controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .test-results {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .results-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+
+        .results-summary {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .summary-passed { color: #10b981; }
+        .summary-failed { color: #ef4444; }
+        .summary-total { color: #6b7280; }
+
+        .results-content {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .test-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #f3f4f6;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .test-item:last-child {
+            border-bottom: none;
+        }
+
+        .test-status {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .test-status.passed {
+            background: #10b981;
+        }
+
+        .test-status.failed {
+            background: #ef4444;
+        }
+
+        .test-info {
+            flex: 1;
+        }
+
+        .test-name {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+
+        .test-message {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .console-output {
+            background: #1f2937;
+            color: #e5e7eb;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 Workflow UI Integration Test Runner</h1>
+            <p>Comprehensive testing suite for real-time workflow execution with UI updates</p>
+        </div>
+
+        <div class="test-controls">
+            <div class="control-buttons">
+                <button class="btn-primary" id="run-all-tests">Run All Tests</button>
+                <button class="btn-secondary" id="run-websocket-test">Test WebSocket</button>
+                <button class="btn-secondary" id="run-progress-test">Test Progress</button>
+                <button class="btn-secondary" id="run-controls-test">Test Controls</button>
+                <button class="btn-secondary" id="run-hitl-test">Test HITL</button>
+                <button class="btn-secondary" id="run-error-test">Test Error Recovery</button>
+                <button class="btn-success" id="clear-results">Clear Results</button>
+            </div>
+        </div>
+
+        <div class="test-results">
+            <div class="results-header">
+                <div class="results-summary" id="results-summary">
+                    <div class="summary-item">
+                        <span>Total Tests:</span>
+                        <span class="summary-value summary-total" id="total-tests">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>✅ Passed:</span>
+                        <span class="summary-value summary-passed" id="passed-tests">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>❌ Failed:</span>
+                        <span class="summary-value summary-failed" id="failed-tests">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Duration:</span>
+                        <span id="test-duration">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-content">
+                <div class="loading" id="loading-indicator">
+                    <div class="spinner"></div>
+                    <p>Click "Run All Tests" to start the integration test suite</p>
+                </div>
+
+                <div id="test-results-list" class="hidden">
+                    <!-- Test results will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="console-output" id="console-output">
+            <!-- Console output will be captured here -->
+        </div>
+    </div>
+
+    <!-- Load test dependencies -->
+    <script src="../frontend/static/modules/workflow-progress-manager.js"></script>
+    <script src="../frontend/static/modules/workflow-controls-manager.js"></script>
+    <script src="../frontend/static/modules/human-in-the-loop-manager.js"></script>
+    <script src="../frontend/static/modules/error-recovery-manager.js"></script>
+
+    <!-- Load the test suite -->
+    <script src="workflow-ui-integration-test.js"></script>
+
+    <script>
+        let testSuite = null;
+        let consoleLogs = [];
+        let originalConsoleLog = console.log;
+        let originalConsoleError = console.error;
+
+        // Capture console output
+        console.log = function(...args) {
+            consoleLogs.push(['log', ...args]);
+            originalConsoleLog.apply(console, args);
+            updateConsoleOutput();
+        };
+
+        console.error = function(...args) {
+            consoleLogs.push(['error', ...args]);
+            originalConsoleError.apply(console, args);
+            updateConsoleOutput();
+        };
+
+        function updateConsoleOutput() {
+            const consoleElement = document.getElementById('console-output');
+            const lastLogs = consoleLogs.slice(-50); // Show last 50 log entries
+            consoleElement.textContent = lastLogs.map(([type, ...args]) => {
+                const prefix = type === 'error' ? '❌' : 'ℹ️';
+                return `${prefix} ${args.join(' ')}`;
+            }).join('\n');
+            consoleElement.scrollTop = consoleElement.scrollHeight;
+        }
+
+        function showLoading() {
+            document.getElementById('loading-indicator').classList.remove('hidden');
+            document.getElementById('test-results-list').classList.add('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-indicator').classList.add('hidden');
+            document.getElementById('test-results-list').classList.remove('hidden');
+        }
+
+        function updateSummary(total, passed, failed, duration) {
+            document.getElementById('total-tests').textContent = total;
+            document.getElementById('passed-tests').textContent = passed;
+            document.getElementById('failed-tests').textContent = failed;
+            document.getElementById('test-duration').textContent = `${duration}ms`;
+        }
+
+        function displayTestResults(results) {
+            const resultsList = document.getElementById('test-results-list');
+            const totalTests = results.length;
+            const passedTests = results.filter(r => r.passed).length;
+            const failedTests = totalTests - passedTests;
+
+            updateSummary(totalTests, passedTests, failedTests, Date.now() - testSuite.testStartTime);
+
+            resultsList.innerHTML = results.map(result => `
+                <div class="test-item">
+                    <div class="test-status ${result.passed ? 'passed' : 'failed'}"></div>
+                    <div class="test-info">
+                        <div class="test-name">${result.test}</div>
+                        <div class="test-message">${result.message}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            hideLoading();
+        }
+
+        // Test runner functions - make them global
+        window.runAllTests = async function() {
+            if (!testSuite) {
+                testSuite = new WorkflowUIIntegrationTest();
+            }
+
+            showLoading();
+            consoleLogs = [];
+
+            // Override the test suite's recordTestResult to update UI
+            const originalRecordTestResult = testSuite.recordTestResult;
+            testSuite.recordTestResult = function(testName, testPassed, message) {
+                originalRecordTestResult.call(this, testName, testPassed, message);
+                // Update UI incrementally
+                const total = this.testResults.length;
+                const passed = this.testResults.filter(r => r.passed).length;
+                const failed = total - passed;
+                updateSummary(total, passed, failed, Date.now() - this.testStartTime);
+            };
+
+            // Override printTestSummary to display results
+            testSuite.printTestSummary = function() {
+                displayTestResults(this.testResults);
+            };
+
+            await testSuite.runAllTests();
+        };
+
+        window.runWebSocketTest = async function() {
+            if (!testSuite) testSuite = new WorkflowUIIntegrationTest();
+            showLoading();
+            await testSuite.runTest('websocket');
+            hideLoading();
+        };
+
+        window.runProgressTest = async function() {
+            if (!testSuite) testSuite = new WorkflowUIIntegrationTest();
+            showLoading();
+            await testSuite.runTest('progress');
+            hideLoading();
+        };
+
+        window.runControlsTest = async function() {
+            if (!testSuite) testSuite = new WorkflowUIIntegrationTest();
+            showLoading();
+            await testSuite.runTest('controls');
+            hideLoading();
+        };
+
+        window.runHITLTest = async function() {
+            if (!testSuite) testSuite = new WorkflowUIIntegrationTest();
+            showLoading();
+            await testSuite.runTest('hitl');
+            hideLoading();
+        };
+
+        window.runErrorTest = async function() {
+            if (!testSuite) testSuite = new WorkflowUIIntegrationTest();
+            showLoading();
+            await testSuite.runTest('error');
+            hideLoading();
+        };
+
+        window.clearResults = function() {
+            document.getElementById('total-tests').textContent = '0';
+            document.getElementById('passed-tests').textContent = '0';
+            document.getElementById('failed-tests').textContent = '0';
+            document.getElementById('test-duration').textContent = '0ms';
+            document.getElementById('test-results-list').innerHTML = '';
+            document.getElementById('console-output').textContent = '';
+            consoleLogs = [];
+
+            showLoading();
+            if (testSuite) {
+                testSuite.testResults = [];
+                testSuite.testStartTime = null;
+            }
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add event listeners to buttons
+            document.getElementById('run-all-tests').addEventListener('click', window.runAllTests);
+            document.getElementById('run-websocket-test').addEventListener('click', window.runWebSocketTest);
+            document.getElementById('run-progress-test').addEventListener('click', window.runProgressTest);
+            document.getElementById('run-controls-test').addEventListener('click', window.runControlsTest);
+            document.getElementById('run-hitl-test').addEventListener('click', window.runHITLTest);
+            document.getElementById('run-error-test').addEventListener('click', window.runErrorTest);
+            document.getElementById('clear-results').addEventListener('click', window.clearResults);
+
+            console.log('Workflow UI Integration Test Runner loaded');
+            console.log('Available test functions:');
+            console.log('- runAllTests(): Run complete test suite');
+            console.log('- runWebSocketTest(): Test WebSocket functionality');
+            console.log('- runProgressTest(): Test progress visualization');
+            console.log('- runControlsTest(): Test workflow controls');
+            console.log('- runHITLTest(): Test HITL components');
+            console.log('- runErrorTest(): Test error recovery');
+            console.log('- clearResults(): Clear test results');
+        });
+    </script>
+</body>
+</html>

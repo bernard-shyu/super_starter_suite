@@ -20,6 +20,7 @@ WEBSOCKET_LOG = true
 GENERATION_LOG = true
 API_LOG = false  # Disable verbose HTTP middleware logs
 CACHE_LOG = false
+EXTERNAL_HTTP_LOG = false  # Disable noisy external HTTP request logs (httpx, requests, urllib3)
 
 # Colorful logging configuration
 COLORS_ENABLED = true  # Enable/disable ANSI color codes in logs
@@ -34,28 +35,31 @@ COLOR_SCHEME = "uvicorn"  # Color scheme: "uvicorn", "dark", "light"
 "sss.gen_index" = 20            # Generate RAG indexing utilities
 "sss.gen_prog" = 20             # Generate progress tracking
 "sss.gen_ocr" = 20              # Generate OCR reader
-"sss.gen_manager" = 20          # Generate Manager MVC-Model
 "sss.gen_event" = 20            # Generate Event System
 "sss.gen_session" = 20          # Generate RAG Session Manager
 "sss.history" = 20              # chat history
-"sss.history.lifecycle" = 10    # session lifecycle operations
-"sss.history.storage" = 10      # core history persistence
-"sss.history.api" = 10          # history REST API endpoints
-"sss.history.executor" = 10     # chat execution/processing
+"sss.history.lifecycle" = 20    # session lifecycle operations
+"sss.history.storage" = 20      # core history persistence
+"sss.endpoints" = 20            # FastAPI endpoint decorators
+"sss.sess_manager" = 20         # session management - DEBUG level for context persistence issues
 "sss.dto" = 20                  # DTO Status Data
 "sss.test" = 20                 # tests
 
-# WORKFLOW-SPECIFIC LOGGING CONFIGURATION - Granular control for pluggable architecture
-"sss.workflow.bzlogic" = 10     # workflow business logic (adapters/porting) - DEBUG level for workflow execution
-"sss.workflow.loader" = 10      # workflow module loading system - DEBUG level for configuration issues
-"sss.workflow.utils" = 10       # workflow utilities - INFO level
-"sss.workflow.server" = 10      # workflow server management - INFO level
-"sss.workflow.multi_agent" = 10 # workflow Multi-Agent Orchestration Framework
+# UNIFIED WORKFLOW EXECUTION SYSTEM - New centralized execution architecture
+"sss.workflow.loader" = 20             # workflow module loading system - DEBUG level for configuration issues
+"sss.workflow.ui_event" = 20           # workflow UI / Event - INFO level
+"sss.workflow.utils" = 20              # workflow utilities - INFO level
+"sss.workflow.executor" = 10           # unified workflow executor service - DEBUG level for execution tracing
+
+# WORKFLOW LOGGERS - All workflows (adapted and ported) use consistent naming
+"sss.workflow.adapted" = 10            # Adapted workflows
+"sss.workflow.ported" = 10             # Ported workflows 
+"sss.workflow.meta" = 10               # Meta/General workflows
 
 # EXTERNAL LIBRARY LOGGING CONTROL - Suppress noisy third-party libraries
-"httpx" = 20                    # HTTP client library
-"urllib3" = 20                  # URL handling
-"requests" = 20                 # HTTP requests
+"httpx" = 30                    # HTTP client library
+"urllib3" = 30                  # URL handling
+"requests" = 30                 # HTTP requests
 "PIL" = 20                      # Pillow/PIL image library
 "llama_index" = 20              # LlamaIndex core
 "llama_parse" = 20              # LlamaParse
@@ -93,6 +97,8 @@ AI_PARSERS = [
     { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-flash" },
     { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-flash-lite" },
     { GEN_METHOD = "GeminiAI", ID = "gemini-2.5-pro" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-3.0-flash" },
+    { GEN_METHOD = "GeminiAI", ID = "gemini-3.0-pro" },
 
     { GEN_METHOD = "NvidiaAI", ID = "microsoft/phi-4-multimodal-instruct" },
     { GEN_METHOD = "NvidiaAI", ID = "microsoft/phi-3.5-vision-instruct" },
@@ -187,23 +193,24 @@ CHATBOT = [
 # Pluggable Workflow Configuration Section
 # - Defines all available workflows with their metadata and configurations
 # - 'icon' field can be smiley, or image path (ex. '/static/icons/agentic.png')
-# - Enhanced with artifact behavior flags for unified decorator and ChatHistoryManager
-# - workflow_type: 
+# - integrate_type:
 #   * adapted: workflows imported from STARTER_TOOLS, no business logic
 #   * ported:  workflows ported (NOT imported) from STARTER_TOOLS, with business logic
-#   * meta:    workflows of orchestration/multi-agent/complex beyond the basic adapted/ported categories
+#   * meta:    workflows of orchestration/multi-agent/complex beyond adapted/ported
 #---------------------------------------------------------------------------------------------
 [WORKFLOW]
-A_agentic_rag        = { code_path = "workflow_adapters.agentic_rag",        timeout =  90.0, display_name = "Agentic RAG (Adapted)",          icon = "🧠", description = "Intelligent document analysis with autonomous agents",   workflow_type = "adapted", response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated" }
-A_code_generator     = { code_path = "workflow_adapters.code_generator",     timeout = 240.0, display_name = "Code Generator (Adapted)",       icon = "💻", description = "AI-powered code generation and completion",              workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files" }
-A_deep_research      = { code_path = "workflow_adapters.deep_research",      timeout = 240.0, display_name = "Deep Research (Adapted)",        icon = "🔍", description = "Comprehensive research and analysis",                    workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables" }
-A_document_generator = { code_path = "workflow_adapters.document_generator", timeout = 240.0, display_name = "Document Generator (Adapted)",   icon = "📄", description = "Automated document creation",                            workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents" }
-A_financial_report   = { code_path = "workflow_adapters.financial_report",   timeout = 300.0, display_name = "Financial Report (Adapted)",     icon = "📊", description = "Financial data analysis and reporting",                  workflow_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports" }
-A_human_in_the_loop  = { code_path = "workflow_adapters.human_in_the_loop",  timeout = 120.0, display_name = "Human in the Loop (Adapted)",    icon = "👥", description = "Interactive workflows with human oversight",             workflow_type = "adapted", response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results" }
-AM_multi_agent       = { code_path = "workflow_meta.multi_agent",            timeout = 300.0, display_name = "Multi-Agent Orchestration",      icon = "🔗", description = "Coordinated multi-agent pipelines with shared memory",   workflow_type = "meta",    response_format = "json", artifact_enabled = true,  synthetic_response = "Multi-agent pipeline completed with {count} outputs" }
-P_agentic_rag        = { code_path = "workflow_porting.agentic_rag",         timeout =  90.0, display_name = "Agentic RAG (Ported)",           icon = "🧠", description = "Intelligent document analysis with autonomous agents",   workflow_type = "ported",  response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated" }
-P_code_generator     = { code_path = "workflow_porting.code_generator",      timeout = 240.0, display_name = "Code Generator (Ported)",        icon = "💻", description = "AI-powered code generation and completion",              workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files" }
-P_deep_research      = { code_path = "workflow_porting.deep_research",       timeout = 400.0, display_name = "Deep Research (Ported)",         icon = "🔍", description = "Comprehensive research and analysis",                    workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables" }
-P_document_generator = { code_path = "workflow_porting.document_generator",  timeout = 240.0, display_name = "Document Generator (Ported)",    icon = "📄", description = "Automated document creation",                            workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents" }
-P_financial_report   = { code_path = "workflow_porting.financial_report",    timeout = 300.0, display_name = "Financial Report (Ported)",      icon = "📊", description = "Financial data analysis and reporting",                  workflow_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports" }
-P_human_in_the_loop  = { code_path = "workflow_porting.human_in_the_loop",   timeout = 120.0, display_name = "Human in the Loop (Ported)",     icon = "👥", description = "Interactive workflows with human oversight",             workflow_type = "ported",  response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results" }
+# 🎯 ADAPTED WORKFLOWS - Direct STARTER_TOOLS integration (preserve native behavior)
+A_agentic_rag        = { code_path = "workflow_adapters.agentic_rag",        timeout = 120.0, display_name = "Agentic RAG (Adapted)",          icon = "🧠", description = "Intelligent document analysis with autonomous agents",   integrate_type = "adapted", response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated",    ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true }
+A_code_generator     = { code_path = "workflow_adapters.code_generator",     timeout = 240.0, display_name = "Code Generator (Adapted)",       icon = "💻", description = "AI-powered code generation and completion",              integrate_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files",                          ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true }
+A_deep_research      = { code_path = "workflow_adapters.deep_research",      timeout = 240.0, display_name = "Deep Research (Adapted)",        icon = "🔍", description = "Comprehensive research and analysis",                    integrate_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables", ui_component = "MultiStageWorkflowProgress", show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true, force_text_structured_predict = true }
+A_document_generator = { code_path = "workflow_adapters.document_generator", timeout = 240.0, display_name = "Document Generator (Adapted)",   icon = "📄", description = "Automated document creation",                            integrate_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents",                             ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true }
+A_financial_report   = { code_path = "workflow_adapters.financial_report",   timeout = 300.0, display_name = "Financial Report (Adapted)",     icon = "📊", description = "Financial data analysis and reporting",                  integrate_type = "adapted", response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports",                   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true }
+A_human_in_the_loop  = { code_path = "workflow_adapters.human_in_the_loop",  timeout = 120.0, display_name = "Human in the Loop (Adapted)",    icon = "👥", description = "Interactive workflows with human oversight",             integrate_type = "adapted", response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results",   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "None",  show_followup_questions = true, show_workflow_states = true, hie_enabled = true }
+P_agentic_rag        = { code_path = "workflow_porting.agentic_rag",         timeout = 120.0, display_name = "Agentic RAG (Ported)",           icon = "🧠", description = "Intelligent document analysis with autonomous agents",   integrate_type = "ported",  response_format = "json", artifact_enabled = false, synthetic_response = "Analysis completed with {count} insights generated",    ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }
+P_code_generator     = { code_path = "workflow_porting.code_generator",      timeout = 240.0, display_name = "Code Generator (Ported)",        icon = "💻", description = "AI-powered code generation and completion",              integrate_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} code files",                          ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }
+P_deep_research      = { code_path = "workflow_porting.deep_research",       timeout = 400.0, display_name = "Deep Research (Ported)",         icon = "🔍", description = "Comprehensive research and analysis",                    integrate_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Completed research analysis with {count} deliverables", ui_component = "MultiStageWorkflowProgress", show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }
+P_document_generator = { code_path = "workflow_porting.document_generator",  timeout = 240.0, display_name = "Document Generator (Ported)",    icon = "📄", description = "Automated document creation",                            integrate_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Created {count} documents",                             ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }
+P_financial_report   = { code_path = "workflow_porting.financial_report",    timeout = 300.0, display_name = "Financial Report (Ported)",      icon = "📊", description = "Financial data analysis and reporting",                  integrate_type = "ported",  response_format = "json", artifact_enabled = true,  synthetic_response = "Generated {count} financial reports",                   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Short", show_followup_questions = true, show_workflow_states = true }
+P_human_in_the_loop  = { code_path = "workflow_porting.human_in_the_loop",   timeout = 120.0, display_name = "Human in the Loop (Ported)",     icon = "👥", description = "Interactive workflows with human oversight",             integrate_type = "ported",  response_format = "html", artifact_enabled = false, synthetic_response = "Interactive workflow completed with {count} results",   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "None",  show_followup_questions = true, show_workflow_states = true, hie_enabled = true }
+M_rag_codegen       = { code_path = "workflow_meta.M_rag_codegen",         timeout = 600.0, display_name = "RAG + CodeGen (Meta)",           icon = "🔗", description = "Multi-agent pipeline: RAG and Code Generation",          integrate_type = "meta",    response_format = "json", artifact_enabled = true,  synthetic_response = "Multi-agent pipeline completed with {count} outputs",   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }
+M_rag_docgen        = { code_path = "workflow_meta.M_rag_docgen",          timeout = 600.0, display_name = "RAG + DocGen (Meta)",            icon = "📄", description = "Multi-agent pipeline: RAG and Document Generation",      integrate_type = "meta",    response_format = "json", artifact_enabled = true,  synthetic_response = "Multi-agent pipeline completed with {count} outputs",   ui_component = "SimpleWorkflowProgress",     show_tool_calls = true,  show_citation = "Full",  show_followup_questions = true, show_workflow_states = true }

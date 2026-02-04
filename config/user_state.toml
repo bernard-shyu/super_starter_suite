@@ -1,6 +1,0 @@
-[USER_MAPPING]
-"192.168.100.100" = "Bernard"
-
-[CURR_WORKFLOW]
-Default = "agentic_rag"
-Bernard = "code_generator"

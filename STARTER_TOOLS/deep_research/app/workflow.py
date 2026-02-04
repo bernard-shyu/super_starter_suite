@@ -404,8 +404,9 @@ class DeepResearchWorkflow(Workflow):
             )
         )
 
+        # Return the actual response content instead of empty string
         return StopEvent(
-            result="",
+            result=final_response,
         )
 
 

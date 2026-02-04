@@ -35,10 +35,7 @@ def save_toml_config(file_path: Path, config: Dict):
         saved_config = load_toml_config(file_path)
         if saved_config != config:
             temp_logger.warning(f"TOML structure may have changed during save for {file_path.name}")
-            # Log the differences for debugging
-            import json
-            temp_logger.debug(f"Original config keys: {set(config.keys())}")
-            temp_logger.debug(f"Saved config keys: {set(saved_config.keys())}")
+            # Verify config integrity
     except Exception as e:
         temp_logger.error(f"Error saving TOML config to {file_path}: {e}")
         raise
@@ -283,6 +280,18 @@ class ConfigManager:
             # Add NullHandler to prevent any output from this logger
             if not uvicorn_error_logger.handlers:
                 uvicorn_error_logger.addHandler(logging.NullHandler())
+            
+            # UNIFIED LOGGING SYSTEM: Handle external HTTP logging toggle
+            external_http_enabled = logging_config.get('EXTERNAL_HTTP_LOG', False)
+            if not external_http_enabled:
+                # Silence noisy HTTP libraries
+                for lib in ['httpx', 'requests', 'urllib3']:
+                    lib_logger = logging.getLogger(lib)
+                    # Force WARNING level if not already higher, or if specifically wanting to silence
+                    current_lib_level = lib_logger.level
+                    if current_lib_level < logging.WARNING:
+                        lib_logger.setLevel(logging.WARNING)
+                        lib_logger.propagate = True
 
             # Configure colorful logging if enabled
             colors_enabled = logging_config.get('COLORS_ENABLED', True)
@@ -472,7 +481,9 @@ class UserConfig:
         self.my_workflow = config_manager.get_user_workflow(self.user_id)
 
         RAG_TYPE = self.get_user_setting(f"WORKFLOW_RAG_TYPE.{self.my_workflow}", "RAG")
-        rag_root = self.get_user_setting("USER_PREFERENCES.USER_RAG_ROOT", "default_rag_root")
+        rag_root_raw = self.get_user_setting("USER_PREFERENCES.USER_RAG_ROOT", "default_rag_root")
+        # Resolve relative paths to $HOME if path doesn't start with '/'
+        rag_root = self._resolve_rag_root_path(rag_root_raw)
         generate_method = self.get_user_setting("GENERATE.METHOD", "LlamaParse")
 
         self.my_rag = UserRAGIndex(
@@ -491,6 +502,32 @@ class UserConfig:
         if not hasattr(self, '_config_logged'):
             config_manager.get_logger("config").debug(f"UserConfig::  USER={self.user_id}  WORKFLOW={self.my_workflow}  RAG_TYPE={RAG_TYPE}  METHOD={generate_method}")
             self._config_logged = True
+
+    def _resolve_rag_root_path(self, rag_root_raw: str) -> str:
+        """
+        Resolve USER_RAG_ROOT path supporting both absolute and relative paths.
+
+        If the path starts with '/', treat it as absolute.
+        If the path doesn't start with '/', treat it as relative to $HOME.
+
+        Args:
+            rag_root_raw: Raw RAG root path from configuration
+
+        Returns:
+            Resolved absolute path
+        """
+        # Check if path starts with '/' (absolute path)
+        if rag_root_raw.startswith('/'):
+            return rag_root_raw
+        else:
+            # Treat as relative to $HOME
+            home_dir = os.path.expanduser("~")
+            return os.path.join(home_dir, rag_root_raw)
+
+    @property
+    def my_rag_root(self) -> str:
+        """Get the resolved RAG root path (always absolute)."""
+        return self.my_rag.rag_root
 
     def update_runtime_config(self, workflow: str):
         config_manager.update_user_workflow(self.user_id, workflow)

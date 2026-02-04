@@ -12,12 +12,8 @@ Pattern C means FORBIDDEN to import from STARTER_TOOLS directory.
 All business logic must be reimplemented locally in this file.
 """
 
-from fastapi import APIRouter, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request
 from typing import Dict, Any, Optional, Literal
-from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
-from super_starter_suite.shared.dto import MessageRole, create_chat_message
 
 # COMPLETE Pattern C: No imports from STARTER_TOOLS - full workflow reimplementation
 from llama_index.core.workflow import Workflow, Context, Event, StartEvent, StopEvent, step
@@ -26,11 +22,8 @@ from llama_index.server.api.models import (
     DocumentArtifactData, UIEvent
 )
 from llama_index.core.base.llms.types import ChatMessage as LlamaChatMessage
-from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
 from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.core.prompts import PromptTemplate
 from llama_index.core.settings import Settings
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
 from pydantic import BaseModel, Field
 
 import time
@@ -38,15 +31,11 @@ import re
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.workflow_loader import get_workflow_config
 
-logger = config_manager.get_logger("workflow.ported.document_generator")
+logger = config_manager.get_logger("workflow.ported")
 router = APIRouter()
 
-# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
-workflow_ID = "P_document_generator"
-
 # Load config for derived naming (no hard-coded text beyond workflow_ID)
-workflow_config = get_workflow_config(workflow_ID)
-# Validation happens in workflow_loader.py - assume config is correct
+workflow_config = get_workflow_config("P_document_generator")
 
 # ====================================================================================
 # STEP 1-2: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C)
@@ -107,7 +96,7 @@ class DocumentArtifactWorkflow(Workflow):
             from llama_index.server.api.utils import get_last_artifact
             return get_last_artifact(chat_request)
         except Exception as e:
-            logger.debug(f"Pattern C: Could not retrieve last artifact: {e}")
+            logger.debug(f"[DOC_GEN] RETRIEVE: No existing artifact found ({e})")
             return None
 
     @step
@@ -121,7 +110,7 @@ class DocumentArtifactWorkflow(Workflow):
         if user_msg is None:
             raise ValueError("user_msg is required to run the workflow")
 
-        logger.info(f"Pattern C: Preparing chat history for: {user_msg[:50]}...")
+        logger.info(f"[DOC_GEN] START: Preparing docs for '{user_msg[:50]}...'")
 
         await ctx.set("user_msg", user_msg)
 
@@ -150,7 +139,7 @@ class DocumentArtifactWorkflow(Workflow):
 
         Analyze user request to determine document type, title, and specific requirements
         """
-        logger.info("Pattern C: Planning document requirements...")
+        logger.info("[DOC_GEN] PLAN: Analyzing requirement")
 
         ctx.write_event_to_stream(
             UIEvent(
@@ -203,7 +192,7 @@ class DocumentArtifactWorkflow(Workflow):
         memory.put(LlamaChatMessage(role="assistant", content=f"Planning for the document generation: \n{response.text}"))
         await ctx.set("memory", memory)
 
-        logger.info(f"Pattern C: Planning result - {requirement.type} document: '{requirement.title}'")
+        logger.info(f"[DOC_GEN] DECISION: {requirement.type} | '{requirement.title}'")
 
         return GenerateArtifactEvent(requirement=requirement)
 
@@ -214,7 +203,7 @@ class DocumentArtifactWorkflow(Workflow):
 
         Create or update document based on planning requirements
         """
-        logger.info(f"Pattern C: Generating {event.requirement.type} document: '{event.requirement.title}'")
+        logger.info(f"[DOC_GEN] GENERATE: {event.requirement.type} | '{event.requirement.title}'")
 
         ctx.write_event_to_stream(
             UIEvent(
@@ -287,7 +276,7 @@ class DocumentArtifactWorkflow(Workflow):
 
         Provide user explanation of what was generated/updated
         """
-        logger.info("Pattern C: Synthesizing final answer...")
+        logger.info("[DOC_GEN] COMPLETE: Synthesizing final answer")
 
         memory: ChatMemoryBuffer = await ctx.get("memory")
         chat_history = memory.get()
@@ -323,7 +312,7 @@ class DocumentArtifactWorkflow(Workflow):
         json_block = re.search(r"```json([\s\S]*)```", response_text, re.IGNORECASE)
         if json_block is None:
             # Fallback to default requirement
-            logger.warning("Pattern C: No JSON block found in planning response, defaulting to markdown")
+            logger.warning("[DOC_GEN] PLAN_ERROR: No JSON found, defaulting to markdown")
             return DocumentRequirement(
                 type="markdown",
                 title="Document",
@@ -333,7 +322,7 @@ class DocumentArtifactWorkflow(Workflow):
         try:
             return DocumentRequirement.model_validate_json(json_block.group(1).strip())
         except Exception as e:
-            logger.error(f"Pattern C: Failed to parse requirement JSON: {e}")
+            logger.error(f"[DOC_GEN] ERROR: JSON parse failed: {e}")
             return DocumentRequirement(
                 type="markdown",
                 title="Document",
@@ -349,7 +338,7 @@ class DocumentArtifactWorkflow(Workflow):
         doc_match = re.search(doc_pattern, response_text, re.IGNORECASE)
 
         if doc_match is None:
-            logger.debug("Pattern C: No document block found in response")
+            logger.debug("[DOC_GEN] EXTRACT: No document block found")
             return f"No document was generated. LLM Response: {response_text[:200]}...", requested_type
 
         doc_type = doc_match.group(1).lower()
@@ -364,7 +353,7 @@ class DocumentArtifactWorkflow(Workflow):
 # ====================================================================================
 # STEP 3: COMPLETE FACTORY FUNCTION REIMPLEMENTATION (PATTERN C)
 # ====================================================================================
-def create_workflow(chat_request: ChatRequest) -> Workflow:
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 240.0) -> Workflow:
     """
     Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
 
@@ -372,12 +361,7 @@ def create_workflow(chat_request: ChatRequest) -> Workflow:
     - Handle initialization and configuration
     """
     try:
-        logger.debug("Pattern C: Creating DocumentArtifactWorkflow instance")
-
-        # Use global workflow_config timeout (240.0 seconds for document generator)
-        timeout_seconds = workflow_config.timeout if workflow_config else 240.0
-
-        logger.info(f"Pattern C: Using configured workflow timeout of {timeout_seconds}s")
+        logger.debug("[DOC_GEN] FACTORY: Creating instance, TIMEOUT: {timeout_seconds}s")
         workflow = DocumentArtifactWorkflow(
             chat_request=chat_request,
             timeout=timeout_seconds
@@ -386,50 +370,13 @@ def create_workflow(chat_request: ChatRequest) -> Workflow:
         return workflow
 
     except Exception as e:
-        logger.error(f"Pattern C: Workflow creation failed: {e}")
+        logger.error(f"[DOC_GEN] ERROR: Creation failed: {e}")
         raise ValueError(f"Failed to create document generator workflow: {str(e)}")
 
-# ====================================================================================
-# STEP 4-5-6: COMPLETE SERVER ENDPOINT WITH APPROACH E ARTIFACT EXTRACTION (PATTERN C)
-# ====================================================================================
 # ====================================================================================
 # STEP 4: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
 # ====================================================================================
 
-# Thin factory function (belongs in this file with workflow logic)
-def create_document_generator_workflow_factory(chat_request: Optional[ChatRequest] = None):
-    """Thin factory that returns workflow instance using local implementation"""
-    if chat_request is None:
-        raise ValueError("ChatRequest must be provided for ported workflow factory")
-    return create_workflow(chat_request)
-
-@router.post("/chat")
-@bind_workflow_session(workflow_config)
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
-    """
-    THIN ENDPOINT WRAPPER - delegates to shared infrastructure
-
-    This endpoint now uses shared execute_ported_workflow() instead of
-    containing 150+ lines of duplicate infrastructure code.
-    """
-    # Extract request parameters
-    user_message = payload["question"]
-    session = request.state.chat_session
-    chat_memory = request.state.chat_memory
-    user_config = request.state.user_config
-    chat_manager = request.state.chat_manager
-
-    # Use PROVEN execute_adapter_workflow instead of buggy execute_ported_workflow
-    response_data = await execute_adapter_workflow(
-        workflow_factory=create_document_generator_workflow_factory,  # Ported factory
-        workflow_config=workflow_config,
-        user_message=user_message,
-        user_config=user_config,
-        chat_manager=chat_manager,
-        session=session,
-        chat_memory=chat_memory,
-        logger=logger
-    )
-
-    # Return JSON response (ported workflows use JSON, adapted use HTML)
-    return JSONResponse(content=response_data)
+# LEGACY CHAT ENDPOINT REMOVED
+# Workflow execution is now handled centrally through /api/workflow/{workflow}/session/{session_id}
+# in super_starter_suite/chat_bot/workflow_execution/workflow_endpoints.py

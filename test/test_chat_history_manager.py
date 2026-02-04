@@ -48,13 +48,13 @@ class TestChatHistoryManager:
 
     def test_create_new_session_success(self):
         """Test successful session creation"""
-        workflow_type = "agentic_rag"
+        integrate_type = "agentic_rag"
 
-        session = self.manager.create_new_session(workflow_type)
+        session = self.manager.create_new_session(integrate_type)
 
         assert session is not None
         assert session.session_id is not None
-        assert session.workflow_type == workflow_type
+        assert session.integrate_type == integrate_type
         assert session.user_id == self.user_id
         assert session.created_at is not None
         assert len(session.messages) == 0
@@ -62,18 +62,18 @@ class TestChatHistoryManager:
     def test_load_session_success(self):
         """Test successful session retrieval"""
         # Create a session first
-        workflow_type = "code_generator"
-        created_session = self.manager.create_new_session(workflow_type)
+        integrate_type = "code_generator"
+        created_session = self.manager.create_new_session(integrate_type)
 
         # Save it first
         self.manager.save_session(created_session)
 
         # Retrieve the session
-        retrieved_session = self.manager.load_session(workflow_type, created_session.session_id)
+        retrieved_session = self.manager.load_session(integrate_type, created_session.session_id)
 
         assert retrieved_session is not None
         assert retrieved_session.session_id == created_session.session_id
-        assert retrieved_session.workflow_type == workflow_type
+        assert retrieved_session.integrate_type == integrate_type
 
     def test_load_session_not_found(self):
         """Test retrieval of non-existent session"""

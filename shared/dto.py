@@ -8,7 +8,7 @@ meta-properties (internal control). Only essential changes are visible at contro
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable
 from enum import Enum
 import uuid
 import json
@@ -19,6 +19,9 @@ from super_starter_suite.shared.config_manager import config_manager
 
 # Get logger for StatusData operations
 logger = config_manager.get_logger("dto")
+
+# Import LlamaIndex types for ExecutionContext
+from llama_index.server.api.models import ChatRequest
 
 
 class GenerationState(Enum):
@@ -386,6 +389,93 @@ class StatusData:
             logger.error(f"save_to_file:: Unexpected error in bridge method for RAG type '{self.rag_type}': {e}")
             return False
 
+# ------------------------------------------------------------------
+# CLEAN CITATION SYSTEM DTOs - Structured Data Flow
+# ------------------------------------------------------------------
+
+@dataclass
+class MessageMetadata:
+    """
+    Clean metadata container for human-readable content separation.
+
+    Defines clean boundaries between human-visible content and machine metadata.
+    """
+    citations: List[str] = field(default_factory=list)            # Clean citation markers: ["[citation:uuid]"]
+    citation_metadata: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Metadata for each citation UUID
+    tool_calls: List[str] = field(default_factory=list)         # Tool names: ["query_index"]
+    followup_questions: List[str] = field(default_factory=list) # Follow-up questions: ["What are trends?"]
+    model_provider: str = ""                                    # Model provider
+    model_id: str = ""                                          # Model ID
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "citations": self.citations,
+            "citation_metadata": self.citation_metadata,
+            "tool_calls": self.tool_calls,
+            "followup_questions": self.followup_questions,
+            "model_provider": self.model_provider,
+            "model_id": self.model_id
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'MessageMetadata':
+        """Create from dictionary"""
+        return cls(
+            citations=data.get("citations", []),
+            citation_metadata=data.get("citation_metadata", {}),
+            tool_calls=data.get("tool_calls", []),
+            followup_questions=data.get("followup_questions", []),
+            model_provider=data.get("model_provider", ""),
+            model_id=data.get("model_id", "")
+        )
+
+
+@dataclass
+class StructuredMessage:
+    """
+    CLEAN DATA FLOW: Structured message with separation of concerns.
+
+    Following clean architecture:
+    - Raw Data Stage: Pure LlamaIndex response (separate concerns)
+    - Structured Data Stage: This object with clean human content + metadata
+    - Human Rendering Stage: Standard markdown processing of content field
+    - History Persistence Stage: This object preserved for re-rendering
+
+    Fields clearly define the stage boundaries:
+    - content: Ready for human rendering (markdown-ready text)
+    - metadata: Machine-friendly structure for enhanced UI
+    """
+    content: str                    # Human-readable text (ready for standard markdown processing)
+    metadata: MessageMetadata      # Clean metadata (citations, tools, questions)
+    workflow_name: str             # Context for rendering
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "content": self.content,
+            "metadata": self.metadata.to_dict(),
+            "workflow_name": self.workflow_name
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'StructuredMessage':
+        """Create from dictionary"""
+        return cls(
+            content=data["content"],
+            metadata=MessageMetadata.from_dict(data.get("metadata", {})),
+            workflow_name=data.get("workflow_name", "")
+        )
+
+    def has_enhanced_data(self) -> bool:
+        """Check if message has any enhanced UI elements"""
+        return (
+            len(self.metadata.citations) > 0 or
+            len(self.metadata.tool_calls) > 0 or
+            len(self.metadata.followup_questions) > 0
+        )
+
+
 # Global instances for type checking and validation
 PROGRESS_DATA_TEMPLATE = ProgressData()
 STATUS_DATA_TEMPLATE = StatusData()
@@ -463,23 +553,38 @@ class ChatMessageDTO:
     """
     Data Transfer Object for individual chat messages.
 
+    ENHANCED: Separate rich text metadata from main content for clean UI separation.
+
     This DTO represents a single message in a chat session, designed to work
     across MVC boundaries and support JSON serialization for API responses.
+
+    PHASE 5.8+: Enhanced with separate metadata to support rich text rendering
+    where tool calls, citations, and questions are rendered in separate UI panels.
     """
     role: MessageRole
-    content: str
+    content: str  # MAIN CONTENT ONLY - no embedded metadata
     timestamp: datetime = field(default_factory=datetime.now)
     message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # ENHANCED for rich text rendering (separate from main content)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # PHASE 5.8+: Dedicated fields for workflow-enhanced metadata
+    enhanced_metadata: Dict[str, Any] = field(default_factory=dict)  # {
+    #     "tool_calls": ["query_index", "search_tool"],
+    #     "citations": ["[citation:1]", "[source.pdf]"],
+    #     "followup_questions": ["What are the trends?", "How do metrics compare?"]
+    # }
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
             "role": self.role.value,
-            "content": self.content,
+            "content": self.content,  # Main content stays clean
             "timestamp": self.timestamp.isoformat(),
             "message_id": self.message_id,
-            "metadata": self.metadata
+            "metadata": self.metadata,  # Existing workflows use this
+            "enhanced_metadata": self.enhanced_metadata  # Rich text workflows use this
         }
 
     @classmethod
@@ -487,20 +592,31 @@ class ChatMessageDTO:
         """Create instance from dictionary"""
         return cls(
             role=MessageRole(data["role"]),
-            content=data["content"],
+            content=data["content"],  # Main content stays clean
             timestamp=datetime.fromisoformat(data["timestamp"]),
             message_id=data["message_id"],
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),  # Existing workflows
+            enhanced_metadata=data.get("enhanced_metadata", {})  # Rich text workflows
+        )
+
+    def has_enhanced_data(self) -> bool:
+        """Check if message contains enhanced rich text metadata"""
+        enhanced = self.enhanced_metadata
+        return (
+            enhanced.get("tool_calls", 0) > 0 or
+            enhanced.get("citations", 0) > 0 or
+            enhanced.get("followup_questions", 0) > 0
         )
 
 
 @dataclass
-class ChatSession:
+class ChatSessionData:
     """
-    Data Transfer Object for chat sessions.
+    Data Transfer Object for chat session data structures.
 
-    Represents a complete chat session with persistent history, supporting
-    MVC pattern boundaries and JSON serialization for frontend integration.
+    Pure DTO containing chat message data structures and metadata.
+    Used for persistent chat history storage and serialization.
+    Separated from session management logic (ChatBotSession, WorkflowSession).
     """
     session_id: str
     user_id: str
@@ -558,7 +674,7 @@ class ChatSession:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ChatSession':
+    def from_dict(cls, data: Dict[str, Any]) -> 'ChatSessionData':
         """Create instance from dictionary"""
         return cls(
             session_id=data["session_id"],
@@ -609,20 +725,20 @@ class ChatHistoryConfig:
 
 
 # Factory functions for chat history DTOs
-def create_chat_session(
+def create_chat_session_data(
     user_id: str,
     workflow_name: str,
     session_id: Optional[str] = None,
     title: str = "",
     **kwargs
-) -> ChatSession:
+) -> ChatSessionData:
     """
-    Factory function to create validated ChatSession instances.
+    Factory function to create validated ChatSessionData instances.
     """
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    session = ChatSession(
+    session = ChatSessionData(
         session_id=session_id,
         user_id=user_id,
         workflow_name=workflow_name,
@@ -632,7 +748,7 @@ def create_chat_session(
 
     # Control Point: Always validate on creation
     if not session.validate():
-        raise ValueError(f"Invalid chat session: user_id={user_id}, workflow_name={workflow_name}")
+        raise ValueError(f"Invalid chat session data: user_id={user_id}, workflow_name={workflow_name}")
 
     return session
 
@@ -659,7 +775,7 @@ def create_chat_message(
 
 
 # Global instances for type checking
-CHAT_SESSION_TEMPLATE = ChatSession(
+CHAT_SESSION_TEMPLATE = ChatSessionData(
     session_id="template",
     user_id="template",
     workflow_name="template"
@@ -676,12 +792,14 @@ CHAT_MESSAGE_TEMPLATE = ChatMessageDTO(
 @dataclass
 class WorkflowConfig:
     """
-    Configuration for a workflow definition.
+    🎯 UNIFIED WORKFLOW CONFIGURATION - All properties inlined, no reference sections.
 
-    PHASE 5.6A: Enhanced with artifact behavior flags for unified decorator and ChatHistoryManager.
-    PHASE 5.6D: Extended with derived properties for unified workflow naming.
+    Eliminates fragmented config architecture:
+    - [WF_UI_PATTERN], [WF_ENHANCED_RENDERING], [WF_PROGRESSIVE_STATES] consolidated
+    - Direct property access without reference lookups
+    - Complete workflow config object from get_workflow_config()
 
-    Encapsulates the metadata and settings required for a pluggable workflow,
+    Encapsulates the complete metadata and settings required for a pluggable workflow,
     supporting dynamic loading and registration across the system.
 
     Derived Properties (computed from code_path):
@@ -689,27 +807,377 @@ class WorkflowConfig:
     - workflow_hyphenated: "code-generator" from workflow_code
     - workflow_ID: Expected workflow ID pattern (must be defined in workflow files)
     """
+    # 🎯 CORE WORKFLOW PROPERTIES
     code_path: str          # Python import path (e.g., "workflow_adapters.agentic_rag")
     timeout: float         # Execution timeout in seconds
     display_name: str      # User-friendly name for UI display
     description: Optional[str] = None  # Optional description for the workflow
     icon: Optional[str] = None  # Optional emoji or icon for UI display
 
-    # PHASE 5.6A: Enhanced artifact behavior flags
-    workflow_type: Optional[str] = "adapted"       # "adapted", "ported", "meta"
+    # 🎯 INTEGRATION TYPE PROPERTIES
+    integrate_type: Optional[str] = "adapted"      # "adapted", "ported", "meta"
     response_format: Optional[str] = "json"        # "json", "html"
+
+    # 🎯 ARTIFACT CONFIGURATION
     artifact_enabled: Optional[bool] = False       # True to enable artifact extraction
-    chat_history_context: Optional[bool] = True    # True to maintain conversation history
+    artifacts_enabled: Optional[bool] = False      # Unified flag for artifacts rendering
     synthetic_response: Optional[str] = None       # Template for synthetic responses from artifacts
 
-    # PHASE 5.6D: Added workflow_ID to support Session Management Single Responsibility
+    # 🎯 SESSION MANAGEMENT
+    chat_history_context: Optional[bool] = True    # True to maintain conversation history
+
+    # 🎯 WORKFLOW IDENTIFICATION (from config key)
     workflow_ID: Optional[str] = None  # Raw workflow ID key from TOML config (e.g., "A_agentic_rag")
+
+    # 🎯 UNIFIED UI CONFIGURATION (formerly separate sections)
+    ui_component: Optional[str] = None            # "SimpleWorkflowProgress" or "MultiStageWorkflowProgress"
+
+    # 🎯 UNIFIED RENDERING FLAGS (formerly enhanced_rendering section)
+    show_tool_calls: Optional[bool] = False       # Show tool calls in UI
+    show_citation: Optional[str] = "None"         # Show citation sources: "Full", "Short", "None"
+    show_followup_questions: Optional[bool] = False  # Show AI follow-up questions
+    show_workflow_states: Optional[bool] = False  # Show workflow state progression
+
+    # 🎯 LLM BEHAVIOR FLAGS
+    force_text_structured_predict: Optional[bool] = False # Force text-based structured prediction (Solution F)
+
+    # 🎯 CLI WORKFLOW FEATURES
+    hie_enabled: Optional[bool] = False           # Enable CLI command execution with human oversight
+
+    # 🎯 USER DATA DIRECTORY - Workflow-specific working directory
+    user_data_path: Optional[str] = None          # Calculated user data path from USER_RAG_ROOT/workflow_data
+
+    # 🎯 DYNAMIC WORKFLOW MODULE LOADING - Lazy-loaded properties
+    _workflow_module: Optional[Any] = None  # Cache for imported workflow module
+    _workflow_factory: Optional[Callable[[], Any]] = None  # Cache for workflow factory function
 
     @property
     def workflow_code(self) -> str:
         """Derived: Get workflow code from code_path (e.g., 'code_generator' from 'workflow_adapters.code_generator')"""
         # Extract the last part after the last dot
         return self.code_path.split('.')[-1] if '.' in self.code_path else self.code_path
+
+    def set_user_data_path(self, user_config) -> None:
+        """
+        Initialize user_data_path using user configuration.
+        Must be called when user context is available.
+
+        Args:
+            user_config: User configuration with RAG root paths
+        """
+        if self.user_data_path is not None:
+            return  # Already initialized
+
+        # Calculate workflow data path from USER_RAG_ROOT + workflow_data
+        user_rag_root = user_config.my_rag_root
+        workflow_data_path = os.path.join(user_rag_root, "workflow_data")
+
+        # Ensure directory exists
+        os.makedirs(workflow_data_path, exist_ok=True)
+        logger.debug(f"WorkflowConfig: Initialized user_data_path to {workflow_data_path}")
+
+        self.user_data_path = workflow_data_path
+
+    @property
+    def workflow_factory(self) -> Optional[Callable[[], Any]]:
+        """
+        🎯 DYNAMIC WORKFLOW FACTORY: Lazy-loaded property that unifies all workflow module imports.
+
+        Unifies the scattered workflow module import patterns across the codebase:
+        - STARTER_TOOLS integrated workflows (adapted)
+        - Ported workflow implementations
+        - Future meta-workflow orchestrations
+
+        Lazy-loading pattern ensures modules are imported only when needed,
+        and cached for subsequent accesses.
+
+        Returns:
+            Factory function () -> workflow_instance
+
+        Raises:
+            ImportError: If module cannot be imported
+            AttributeError: If required function not found
+        """
+        # 🚀 CHECK CACHE: Return cached factory if already loaded
+        if self._workflow_factory is not None:
+            return self._workflow_factory
+
+        # 🎯 LAZY IMPORT: Import workflow module based on integration type
+        try:
+            if self.integrate_type == "adapted":
+                # ⭐ ADAPTED: Import from STARTER_TOOLS.{workflow_code}.app.workflow
+                import importlib
+                starer_tools_path = f"STARTER_TOOLS.{self.workflow_code}.app.workflow"
+                self._workflow_module = importlib.import_module(starer_tools_path)
+                create_func = getattr(self._workflow_module, 'create_workflow')
+
+            elif self.integrate_type == "ported":
+                # 🔄 PORTED: Import from workflow_porting.{workflow_code}
+                import importlib
+                porting_path = f"super_starter_suite.workflow_porting.{self.workflow_code}"
+                self._workflow_module = importlib.import_module(porting_path)
+                # Direct approach: use create_workflow function directly
+                create_func = getattr(self._workflow_module, 'create_workflow')
+
+            elif self.integrate_type == "meta":
+                # 🎭 META: Multi-agent orchestration workflows from workflow_meta
+                import importlib
+                # Use code_path which points to 'workflow_meta.multi_agent'
+                meta_path = f"super_starter_suite.{self.code_path}"
+                self._workflow_module = importlib.import_module(meta_path)
+                # Look for create_workflow function
+                if hasattr(self._workflow_module, 'create_workflow'):
+                    create_func = getattr(self._workflow_module, 'create_workflow')
+                else:
+                    # Fallback for meta workflows that might use a different pattern
+                    # But for now, we expect create_workflow to follow the pattern
+                    raise NotImplementedError(f"Meta workflow {self.workflow_ID} does not implement create_workflow")
+
+            else:
+                raise ValueError(f"Unknown integrate_type: {self.integrate_type}")
+
+            # 🏭 CREATE CACHED FACTORY: Direct create_workflow function (no wrapper needed)
+            self._workflow_factory = create_func
+            return self._workflow_factory
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load workflow factory for {self.workflow_ID} ({self.integrate_type}): {e}")
+            raise ImportError(f"Cannot load workflow factory for {self.workflow_ID}: {e}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "code_path": self.code_path,
+            "timeout": self.timeout,
+            "display_name": self.display_name,
+            "description": self.description,
+            "icon": self.icon,
+            "integrate_type": self.integrate_type,
+            "response_format": self.response_format,
+            "artifact_enabled": self.artifact_enabled,
+            "artifacts_enabled": self.artifacts_enabled,
+            "synthetic_response": self.synthetic_response,
+            "chat_history_context": self.chat_history_context,
+            "workflow_ID": self.workflow_ID,
+            "ui_component": self.ui_component,
+            "show_tool_calls": self.show_tool_calls,
+            "show_citation": self.show_citation,
+            "show_followup_questions": self.show_followup_questions,
+            "show_workflow_states": self.show_workflow_states,
+            "force_text_structured_predict": self.force_text_structured_predict
+        }
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'WorkflowConfig':
+        """Create instance from dictionary, handling optional fields and defaults."""
+        return cls(
+            code_path=config_dict["code_path"],
+            timeout=config_dict.get("timeout", 60.0),
+            display_name=config_dict["display_name"],
+            description=config_dict.get("description"),
+            icon=config_dict.get("icon"),
+            integrate_type=config_dict.get("integrate_type", "adapted"),
+            response_format=config_dict.get("response_format", "json"),
+            artifact_enabled=config_dict.get("artifact_enabled", False),
+            artifacts_enabled=config_dict.get("artifacts_enabled", False),
+            synthetic_response=config_dict.get("synthetic_response"),
+            chat_history_context=config_dict.get("chat_history_context", True),
+            workflow_ID=config_dict.get("workflow_ID"),
+            ui_component=config_dict.get("ui_component"),
+            show_tool_calls=config_dict.get("show_tool_calls", False),
+            show_citation=config_dict.get("show_citation", "None"),
+            show_followup_questions=config_dict.get("show_followup_questions", False),
+            show_workflow_states=config_dict.get("show_workflow_states", False),
+
+            # 🎯 LLM BEHAVIOR FLAGS
+            force_text_structured_predict=config_dict.get("force_text_structured_predict", False),
+
+            hie_enabled=config_dict.get("hie_enabled", False),
+            user_data_path=config_dict.get("user_data_path")
+        )
+
+# ------------------------------------------------------------------
+# EXECUTION ENGINE DTOs - Unified Workflow Execution Context
+# ------------------------------------------------------------------
+
+@dataclass
+class ExecutionContext:
+    """
+    🎯 STREAMLINED EXECUTION CONTEXT: Dynamic data only - static data from WorkflowSession.
+
+    NEW ARCHITECTURE: WorkflowSession becomes master container holding static + dynamic data.
+    ExecutionContext contains ONLY per-request dynamic data for workflow execution.
+
+    DYNAMIC DATA (per-request, changes frequently):
+    - user_message: Current user input
+    - chat_memory: Current conversation context
+    - logger: Current execution logger
+
+    STATIC DATA (bound once, accessed from WorkflowSession):
+    - workflow_config: ← WorkflowSession.workflow_config_data
+    - workflow_factory: ← WorkflowSession.workflow_factory_func
+    - user_config: ← WorkflowSession.user_config
+    - session/chat_manager: ← WorkflowSession properties
+    """
+    # DYNAMIC PARAMETERS ONLY (per-request execution)
+    user_message: str                    # The current user's input message
+    chat_memory: Optional[Any] = None    # Current conversation memory context
+
+    # Logger (comes last to have default value)
+    logger: Optional[Any] = None         # Logger for current execution
+
+    # MARKED FOR REMOVAL: Static data now comes from WorkflowSession
+    # These fields remain for backward compatibility during migration
+    # TODO: Phase 4 - Remove these legacy fields
+    user_config: Optional[Dict[str, Any]] = None    # LEGACY: ← WorkflowSession.user_config
+    workflow_config: Optional[Any] = None           # LEGACY: ← WorkflowSession.workflow_config_data
+    workflow_factory: Optional[Callable[[], Any]] = None  # LEGACY: ← WorkflowSession.workflow_factory_func
+    session: Optional[Any] = None                   # LEGACY: ← WorkflowSession.session
+    chat_manager: Optional[Any] = None             # LEGACY: ← WorkflowSession.chat_manager
+
+    # EXECUTION CONTEXT METHODS - LEGACY COMPATIBILITY METHODS
+    # Ensure workflows can still call these on ExecutionContext (delegated to session)
+
+    def create_chat_request(self) -> Any:
+        """
+        Create standardized ChatRequest for workflow execution.
+        Delegated to the session's create_chat_request method.
+
+        Returns:
+            ChatRequest: LlamaIndex ChatRequest object
+        """
+        if self.session and hasattr(self.session, 'create_chat_request'):
+            return self.session.create_chat_request()
+
+        # Fallback for workflows that don't have session with create_chat_request
+        from llama_index.server.api.models import ChatRequest, ChatAPIMessage
+        from llama_index.core.base.llms.types import MessageRole
+
+        user_id = getattr(self.user_config, 'user_id', 'default_user') if self.user_config else 'default_user'
+
+        return ChatRequest(
+            messages=[ChatAPIMessage(
+                role=MessageRole.USER,
+                content=self.user_message
+            )],
+            id=user_id
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization (excluding complex objects)"""
+        return {
+            "user_message": self.user_message,
+            # Note: Other fields contain complex objects not suitable for JSON
+        }
+
+
+# ------------------------------------------------------------------
+# CLEAN EXECUTION ENGINE DTOs - Structured Workflow Results
+# ------------------------------------------------------------------
+
+@dataclass
+class ExecutionResult:
+    """
+    🎯 EXECUTION RESULT: Structured results from Clean Workflow Execution Engine
+
+    Represents the complete output from workflow execution using observation-only streaming.
+    Provides clean separation between execution logic and result structure.
+
+    Rendering Instructions Structure:
+    {
+        "show_tool_calls": boolean,
+        "show_citation": boolean,
+        "show_followup_questions": boolean,
+        "show_workflow_states": boolean,
+        "show_artifacts": boolean,
+
+        "tool_calls": ["query_index", "search_results"],
+        "citations": ["f4bdb632-d171-4e38-a14b-1c7f1f3780f5", "uuid2"],
+        "followup_questions": ["What are trends?", "How do metrics compare?"],
+        "progress_states": ["Analyzing", "Generating"],
+        "artifacts": [{"type": "document", "name": "report.pdf"}]
+    }
+    """
+    # 🎯 PRIMARY EXECUTION RESULTS
+    response_content: str                        # Main response text (ready for rendering)
+    artifacts_collected: List[Dict[str, Any]]   # Artifacts from ArtifactEvents
+
+    # 🎯 CLEAN RENDERING INSTRUCTIONS (backend controls frontend rendering)
+    rendering_instructions: Dict[str, Any] = field(default_factory=dict)
+
+    # 🎯 EXECUTION METADATA
+    execution_time: Optional[float] = None       # Time taken in seconds
+    error_message: Optional[str] = None          # Error if execution failed
+    workflow_config: Optional[WorkflowConfig] = None  # Used workflow config
+
+    def __post_init__(self):
+        """Validate and normalize after creation"""
+        # Ensure response_content is always a string
+        if not isinstance(self.response_content, str):
+            self.response_content = str(self.response_content)
+
+        # Ensure artifacts_collected is always a list
+        if not isinstance(self.artifacts_collected, list):
+            self.artifacts_collected = []
+
+        # Initialize rendering_instructions with defaults
+        if not self.rendering_instructions:
+            self.rendering_instructions = {
+                "show_tool_calls": False,
+                "show_citation": "None",
+                "show_followup_questions": False,
+                "show_workflow_states": False,
+                "show_artifacts": False,
+
+                "tool_calls": [],
+                "citations": [],
+                "followup_questions": [],
+                "progress_states": [],
+                "artifacts": []
+            }
+
+    def is_successful(self) -> bool:
+        """Check if execution was successful"""
+        return self.error_message is None
+
+    def has_artifacts(self) -> bool:
+        """Check if execution produced artifacts"""
+        return len(self.artifacts_collected) > 0
+
+    def has_enhanced_rendering(self) -> bool:
+        """Check if result requires enhanced rendering features"""
+        instructions = self.rendering_instructions
+        return any([
+            instructions.get("show_tool_calls", False),
+            instructions.get("show_citation", False),
+            instructions.get("show_followup_questions", False),
+            instructions.get("show_workflow_states", False),
+            len(instructions.get("artifacts", [])) > 0
+        ])
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON transport"""
+        return {
+            "response_content": self.response_content,
+            "artifacts_collected": self.artifacts_collected,
+            "rendering_instructions": self.rendering_instructions,
+            "execution_time": self.execution_time,
+            "error_message": self.error_message,
+            "workflow_config": self.workflow_config.to_dict() if self.workflow_config else None
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ExecutionResult':
+        """Create from dictionary"""
+        return cls(
+            response_content=data.get("response_content", ""),
+            artifacts_collected=data.get("artifacts_collected", []),
+            rendering_instructions=data.get("rendering_instructions", {}),
+            execution_time=data.get("execution_time"),
+            error_message=data.get("error_message"),
+            workflow_config=WorkflowConfig(**data.get("workflow_config", {})) if data.get("workflow_config") else None
+        )
+
 
 @dataclass
 class WorkflowDefinition:

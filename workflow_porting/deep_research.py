@@ -12,27 +12,22 @@ Pattern C means FORBIDDEN to import from STARTER_TOOLS directory.
 All business logic must be reimplemented locally in this file.
 """
 
-from fastapi import APIRouter, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request
 from typing import Dict, Any, Optional, List
-from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
-from super_starter_suite.shared.dto import MessageRole, create_chat_message
 
 # COMPLETE Pattern C: No imports from STARTER_TOOLS - full llama_index.core.workflow reimplementation
 from llama_index.core.workflow import Workflow, Context, Event, StartEvent, StopEvent, step
 from llama_index.server.api.models import (
-    ChatAPIMessage, ChatRequest, ArtifactEvent, ArtifactType, Artifact,
-    DocumentArtifactData, UIEvent, SourceNodesEvent
+    ChatRequest, ArtifactEvent, ArtifactType, Artifact,
+    DocumentArtifactData, UIEvent, SourceNodesEvent, DocumentArtifactSource
 )
-from llama_index.core.base.llms.types import MessageRole as LlamaMessageRole
 from llama_index.core.indices.base import BaseIndex
 from llama_index.core.memory import ChatMemoryBuffer, SimpleComposableMemory
-from llama_index.core.prompts import PromptTemplate
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.settings import Settings
-from llama_index.core.base.llms.types import ChatMessage
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
+from typing import Literal
 
 import uuid
 import time
@@ -40,17 +35,13 @@ import os
 
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.workflow_loader import get_workflow_config
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
+from super_starter_suite.shared.workflow_utils import write_response_to_stream, generate_followup_questions
 
-logger = config_manager.get_logger("workflow.ported.deep_research")
+logger = config_manager.get_logger("workflow.ported")
 router = APIRouter()
 
-# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
-workflow_ID = "P_deep_research"
-
 # Load config for derived naming (no hard-coded text beyond workflow_ID)
-workflow_config = get_workflow_config(workflow_ID)
-# Validation happens in workflow_loader.py - assume config is correct
+workflow_config = get_workflow_config("P_deep_research")
 
 # ====================================================================================
 # STEP 1-2-3: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C - NO STARTER_TOOLS)
@@ -73,12 +64,28 @@ class ReportEvent(Event):
     pass
 
 class UIEventData(BaseModel):
-    """Reimplemented UI event data for complete Pattern C control"""
-    id: Optional[str] = Field(default=None, description="Unique event ID")
-    event: str = Field(default="retrieve", description="Event type: retrieve/analyze/answer")
-    state: str = Field(default="pending", description="State: pending/inprogress/done/error")
-    question: Optional[str] = Field(default=None, description="Question text for answer events")
-    answer: Optional[str] = Field(default=None, description="Answer text from research")
+    """
+    Events for DeepResearch workflow which has 3 main stages:
+    - Retrieve: Retrieve information from the knowledge base.
+    - Analyze: Analyze the retrieved information and provide list of questions for answering.
+    - Answer: Answering the provided questions. There are multiple answer events, each with its own id that is used to display the answer for a particular question.
+    """
+
+    id: Optional[str] = Field(default=None, description="The id of the event")
+    event: Literal["retrieve", "analyze", "answer"] = Field(
+        default="retrieve", description="The event type"
+    )
+    state: Literal["pending", "inprogress", "done", "error"] = Field(
+        default="pending", description="The state of the event"
+    )
+    question: Optional[str] = Field(
+        default=None,
+        description="Used by answer event to display the question",
+    )
+    answer: Optional[str] = Field(
+        default=None,
+        description="Used by answer event to display the answer of the question",
+    )
 
 class AnalysisDecision(BaseModel):
     """Reimplemented analysis decision model for research planning"""
@@ -124,7 +131,7 @@ class DeepResearchWorkflow(Workflow):
         - Retrieve semantically similar documents
         - Emit UI events and source nodes for frontend display
         """
-        logger.info(f"Pattern C: Starting document retrieval for: {ev.get('user_msg')}")
+        logger.info(f"[RESEARCH] START: Retrieving docs for '{ev.get('user_msg')[:50]}...'")
 
         # Initialize workflow state
         self.stream = ev.get("stream", True)
@@ -141,7 +148,13 @@ class DeepResearchWorkflow(Workflow):
 
         # Emit UI event for retrieval phase start
         ctx.write_event_to_stream(
-            UIEvent(type="ui_event", data=UIEventData(event="retrieve", state="inprogress"))
+            UIEvent(
+                type="ui_event",
+                data=UIEventData(
+                    event="retrieve",
+                    state="inprogress",
+                ),
+            )
         )
 
         # Retrieve top-k semantically similar documents
@@ -149,18 +162,24 @@ class DeepResearchWorkflow(Workflow):
         nodes = retriever.retrieve(self.user_request)
         self.context_nodes.extend(nodes)
 
-        logger.info(f"Pattern C: Retrieved {len(nodes)} documents")
+        logger.info(f"[RESEARCH] RETRIEVAL: Found {len(nodes)} documents")
 
         # Emit source nodes for UI display and retrieval completion
         ctx.write_event_to_stream(SourceNodesEvent(nodes=nodes))
         ctx.write_event_to_stream(
-            UIEvent(type="ui_event", data=UIEventData(event="retrieve", state="done"))
+            UIEvent(
+                type="ui_event",
+                data=UIEventData(
+                    event="retrieve",
+                    state="done",
+                ),
+            )
         )
 
         return PlanResearchEvent()
 
     @step
-    async def analyze(self, ctx: Context, ev: PlanResearchEvent) -> ResearchEvent | ReportEvent | StopEvent:
+    async def analyze(self, ctx: Context, ev: PlanResearchEvent) -> PlanResearchEvent | ResearchEvent | ReportEvent | StopEvent | None:
         """
         PHASE 2: Analyze retrieved information and plan research strategy
 
@@ -169,22 +188,39 @@ class DeepResearchWorkflow(Workflow):
         - Decide whether to research, write report, or cancel
         - Emit UI events for question tracking
         """
-        logger.info("Pattern C: Analyzing retrieved information and planning research")
+        logger.info("[RESEARCH] ANALYZE: Planning research strategy")
 
         ctx.write_event_to_stream(
-            UIEvent(type="ui_event", data=UIEventData(event="analyze", state="inprogress"))
+            UIEvent(
+                type="ui_event",
+                data=UIEventData(
+                    event="analyze",
+                    state="inprogress",
+                ),
+            )
         )
 
         # Get current research progress
         total_questions = await ctx.get("total_questions", 0)
+        waiting_questions = await ctx.get("waiting_questions", 0)
+
+        # If there are still unanswered questions, wait for them to complete
+        if waiting_questions > 0:
+            return PlanResearchEvent()
 
         # Plan research strategy based on context and progress
         decision = await self._plan_research(ctx, total_questions)
 
         if decision.decision == "cancel":
-            logger.info(f"Pattern C: Cancelling research - {decision.cancel_reason}")
+            logger.info(f"[RESEARCH] ABORT: {decision.cancel_reason}")
             ctx.write_event_to_stream(
-                UIEvent(type="ui_event", data=UIEventData(event="analyze", state="done"))
+                UIEvent(
+                    type="ui_event",
+                    data=UIEventData(
+                        event="analyze",
+                        state="done",
+                    ),
+                )
             )
             return StopEvent(result=decision.cancel_reason)
 
@@ -193,44 +229,69 @@ class DeepResearchWorkflow(Workflow):
             if total_questions == 0:
                 logger.warning("Pattern C: Insufficient research context for report generation")
                 ctx.write_event_to_stream(
-                    UIEvent(type="ui_event", data=UIEventData(event="analyze", state="done"))
+                    UIEvent(
+                        type="ui_event",
+                        data=UIEventData(
+                            event="analyze",
+                            state="done",
+                        ),
+                    )
                 )
                 return StopEvent(result="Insufficient information available for comprehensive report.")
 
-            logger.info("Pattern C: Analysis complete, proceeding to report generation")
+            logger.info(f"[RESEARCH] REPORT: Synthesizing findings")
             self.memory.put(ChatMessage(role=MessageRole.ASSISTANT,
-                                      content="Analysis complete. Proceeding to generate comprehensive report."))
+                                      content="No more idea to analyze. We should report the answers."))
+
+            self.memory.put(ChatMessage(role=MessageRole.ASSISTANT,
+                                      content="Researched all the questions. Now, i need to analyze if it's ready to write a report or need to research more."))
             ctx.send_event(ReportEvent())
 
         else:
-            # Generate research questions and initialize tracking
+            # Research questions generated - proceed with parallel answering
             questions = decision.research_questions or []
             total_questions += len(questions)
-            await ctx.set("total_questions", total_questions)
-            await ctx.set("waiting_questions", len(questions))
-
-            logger.info(f"Pattern C: Generated {len(questions)} research questions")
-
-            # Store planning context in memory
-            self.memory.put(ChatMessage(role=MessageRole.ASSISTANT,
-                                      content=f"Identified {len(questions)} research questions to investigate."))
-
-            # Emit UI events for each research question
+            await ctx.set("total_questions", total_questions)  # For tracking
+            await ctx.set(
+                "waiting_questions", len(questions)
+            )  # For waiting questions to be answered
+            self.memory.put(
+                message=ChatMessage(
+                    role=MessageRole.ASSISTANT,
+                    content="We need to find answers to the following questions:\n"
+                    + "\n".join(questions),
+                )
+            )
             for question in questions:
                 question_id = str(uuid.uuid4())
                 ctx.write_event_to_stream(
-                    UIEvent(type="ui_event", data=UIEventData(
-                        event="answer", state="pending", id=question_id, question=question
-                    ))
+                    UIEvent(
+                        type="ui_event",
+                        data=UIEventData(
+                            event="answer",
+                            state="pending",
+                            id=question_id,
+                            question=question,
+                            answer=None,
+                        ),
+                    )
                 )
-                ctx.send_event(ResearchEvent(
-                    question_id=question_id,
-                    question=question,
-                    context_nodes=self.context_nodes
-                ))
+                ctx.send_event(
+                    ResearchEvent(
+                        question_id=question_id,
+                        question=question,
+                        context_nodes=self.context_nodes,
+                    )
+                )
 
         ctx.write_event_to_stream(
-            UIEvent(type="ui_event", data=UIEventData(event="analyze", state="done"))
+            UIEvent(
+                type="ui_event",
+                data=UIEventData(
+                    event="analyze",
+                    state="done",
+                ),
+            )
         )
         return None
 
@@ -243,7 +304,7 @@ class DeepResearchWorkflow(Workflow):
         - Provide evidence-based answers with citations
         - Emit UI events for progress tracking
         """
-        logger.info(f"Pattern C: Answering research question: {ev.question[:50]}...")
+        logger.info(f"[RESEARCH] QUERY: {ev.question[:50]}...")
 
         ctx.write_event_to_stream(
             UIEvent(type="ui_event", data=UIEventData(
@@ -253,7 +314,7 @@ class DeepResearchWorkflow(Workflow):
 
         try:
             answer = await self._answer_question(ev.question, ev.context_nodes)
-            logger.info(f"Pattern C: Completed research for question ID {ev.question_id}")
+            logger.info(f"[RESEARCH] STEP_COMPLETE: id='{ev.question_id}'")
         except Exception as e:
             logger.error(f"Pattern C: Error answering question {ev.question}: {e}")
             answer = f"Research error: {str(e)}"
@@ -272,15 +333,15 @@ class DeepResearchWorkflow(Workflow):
         )
 
     @step
-    async def collect_answers(self, ctx: Context, ev: CollectAnswersEvent) -> PlanResearchEvent:
+    async def collect_answers(self, ctx: Context, ev: CollectAnswersEvent) -> PlanResearchEvent | None:
         """
         PHASE 3b: Collect and integrate research answers
 
         - Accumulate all research findings
         - Update conversation memory with new insights
-        - Prepare for next analysis phase
+        - Prepare for next analysis phase when all questions are answered
         """
-        logger.info(f"Pattern C: Collecting answer for question: {ev.question[:30]}...")
+        logger.info(f"[RESEARCH] QUERY_COMPLETE: {ev.question[:30]}...")
 
         # Store research findings in memory
         self.memory.put(ChatMessage(role=MessageRole.ASSISTANT,
@@ -290,11 +351,19 @@ class DeepResearchWorkflow(Workflow):
         total_questions = await ctx.get("total_questions", 0) + 1
         await ctx.set("total_questions", total_questions)
 
+        waiting_questions = await ctx.get("waiting_questions", 0) - 1
+        await ctx.set("waiting_questions", max(0, waiting_questions))
+
         self.memory.put(ChatMessage(role=MessageRole.ASSISTANT,
                                   content="Research question completed. Analyzing progress..."))
 
-        logger.info(f"Pattern C: Research progress - {total_questions} questions completed")
-        return PlanResearchEvent()
+        # Only return PlanResearchEvent when all questions are answered
+        if waiting_questions <= 0:
+            logger.info("[RESEARCH] AGGREGATE: All questions completed")
+            return PlanResearchEvent()
+        else:
+            logger.info(f"[RESEARCH] SYNC: {total_questions} done | {waiting_questions} pending")
+            return None
 
     @step
     async def report(self, ctx: Context, ev: ReportEvent) -> StopEvent:
@@ -303,15 +372,39 @@ class DeepResearchWorkflow(Workflow):
 
         - Synthesize all research findings
         - Create well-structured report with evidence
-        - Emit final artifact for user consumption
+        - Emit final artifact with source citations
+        - Generate contextual response and follow-up questions for UI
         """
-        logger.info("Pattern C: Generating comprehensive research report")
+        logger.info("[RESEARCH] REPORT: Generating synthesis")
 
         report_content = await self._generate_report()
 
-        logger.info(f"Pattern C: Report generated ({len(report_content)} characters)")
+        logger.info(f"[RESEARCH] REPORT_GENERATED: {len(report_content)} chars")
 
-        # Emit final artifact event with complete research report
+        # No completion UI events needed for report step as workflow is ending
+
+        # Extract research findings for follow-up question generation
+        research_findings = []
+        for msg in self.memory.get_all():
+            if (msg.role == MessageRole.ASSISTANT and
+                msg.content and
+                ("Research Finding" in msg.content or "research" in msg.content.lower())):
+                research_findings.append(msg.content)
+
+        # Generate follow-up questions based on research
+        followup_questions = await generate_followup_questions(
+            self.user_request, research_findings, self.context_nodes
+        )
+
+        # Store context for response generation
+        await ctx.set("user_request", self.user_request)
+        await ctx.set("total_questions", await ctx.get("total_questions", 0))
+        await ctx.set("context_nodes", self.context_nodes)
+
+        # Generate contextual response using write_response_to_stream
+        contextual_response = await write_response_to_stream(None, ctx)
+
+        # Emit final artifact event with complete research report and sources
         ctx.write_event_to_stream(
             ArtifactEvent(
                 data=Artifact(
@@ -320,13 +413,28 @@ class DeepResearchWorkflow(Workflow):
                     data=DocumentArtifactData(
                         title="Deep Research Report",
                         content=report_content,
-                        type="markdown"
+                        type="markdown",
+                        sources=[
+                            DocumentArtifactSource(
+                                id=getattr(node, 'id', str(uuid.uuid4())),
+                            )
+                            for node in self.context_nodes
+                        ],
                     )
                 )
             )
         )
 
-        return StopEvent(result="")
+        # Include follow-up questions in the result for UI processing
+        result_data = {
+            "response": contextual_response,
+            "followup_questions": followup_questions if followup_questions else []
+        }
+
+        if followup_questions:
+            logger.info(f"[RESEARCH] FOLLOWUP: Generated {len(followup_questions)} questions")
+
+        return StopEvent(result=result_data)
 
     # ====================================================================================
     # PATTERN C: REIMPLEMENTED BUSINESS LOGIC METHODS (NO STARTER_TOOLS DEPENDENCY)
@@ -386,8 +494,7 @@ class DeepResearchWorkflow(Workflow):
         context_parts = []
         for i, node in enumerate(context_nodes[:5]):  # Limit to top 5 most relevant
             content = node.get_content()
-            if len(content) > 500:  # Truncate long content
-                content = content[:500] + "..."
+            # Remove truncation - allow full content for comprehensive research
             context_parts.append(f"[Source {i+1}]: {content}")
 
         context_str = "\n\n".join(context_parts)
@@ -419,11 +526,11 @@ class DeepResearchWorkflow(Workflow):
             if not answer:
                 answer = "Based on available research documents, insufficient information to fully answer this question."
 
-            logger.debug(f"Pattern C: Generated answer ({len(answer)} chars) for question: {question[:30]}...")
+            logger.debug(f"[RESEARCH] ANSWER: Generated {len(answer)} chars")
             return answer
 
         except Exception as e:
-            logger.error(f"Pattern C: LLM error in question answering: {e}")
+            logger.error(f"[RESEARCH] ERROR: LLM failure: {e}")
             return f"Unable to complete research due to processing error: {str(e)}"
 
     async def _generate_report(self) -> str:
@@ -444,7 +551,9 @@ class DeepResearchWorkflow(Workflow):
         # Reconstruct research timeline from memory
         research_findings = []
         for msg in self.memory.get_all():
-            if msg.role == MessageRole.ASSISTANT and ("Research Finding" in msg.content or "research" in msg.content.lower()):
+            if (msg.role == MessageRole.ASSISTANT and
+                msg.content and
+                ("Research Finding" in msg.content or "research" in msg.content.lower())):
                 research_findings.append(msg.content)
 
         findings_summary = "\n".join(research_findings[-10:])  # Most recent findings
@@ -515,11 +624,11 @@ class DeepResearchWorkflow(Workflow):
 
 """
             complete_report = report_header + report
-            logger.info(f"Pattern C: Generated complete research report ({len(complete_report)} chars)")
+            logger.info(f"[RESEARCH] REPORT_DONE: {len(complete_report)} chars")
             return complete_report
 
         except Exception as e:
-            logger.error(f"Pattern C: Error generating research report: {e}")
+            logger.error(f"[RESEARCH] ERROR: Report generation failed: {e}")
             return f"""# Research Report Generation Error
 
 ## Summary
@@ -535,7 +644,8 @@ Please try the research again or contact support if this issue persists.
 # ====================================================================================
 # STEP 4: COMPLETE FACTORY FUNCTION REIMPLEMENTATION (PATTERN C)
 # ====================================================================================
-def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
+
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 300.0) -> Workflow:
     """
     Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
 
@@ -551,12 +661,7 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
             logger.error("Pattern C: Index not found - ensure knowledge base is properly configured")
             raise ValueError("Index is not available. Try running setup scripts or check configuration.")
 
-        logger.info("Pattern C: Successfully initialized DeepResearchWorkflow with index")
-
-        # Use global workflow_config timeout (400.0 seconds for deep research)
-        timeout_seconds = workflow_config.timeout if workflow_config else 300.0
-
-        logger.info(f"Pattern C: Using configured workflow timeout of {timeout_seconds}s")
+        logger.info("[RESEARCH] FACTORY: Successfully initialized, TIMEOUT: {timeout_seconds}s")
         return DeepResearchWorkflow(index=index, timeout=timeout_seconds)
 
     except ImportError as e:
@@ -564,46 +669,13 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
         raise ValueError("Index utilities not available. Check if required packages are installed.")
 
     except Exception as e:
-        logger.error(f"Pattern C: Workflow initialization failed: {e}")
+        logger.error(f"[RESEARCH] ERROR: Initialization failed: {e}")
         raise ValueError(f"Failed to create research workflow: {str(e)}")
 
 # ====================================================================================
 # STEP 5: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
 # ====================================================================================
 
-# Thin factory function (belongs in this file with workflow logic)
-def create_deep_research_workflow_factory(chat_request: Optional[ChatRequest] = None):
-    """Thin factory that returns workflow instance using local implementation"""
-    if chat_request is None:
-        raise ValueError("ChatRequest must be provided for ported workflow factory")
-    return create_workflow(chat_request)
-
-@router.post("/chat")
-@bind_workflow_session(workflow_config)
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
-    """
-    THIN ENDPOINT WRAPPER - uses execute_adapter_workflow for consistent artifact handling
-
-    Ported workflows use the same proven infrastructure as adapted workflows.
-    """
-    # Extract request parameters
-    user_message = payload["question"]
-    session = request.state.chat_session
-    chat_memory = request.state.chat_memory
-    user_config = request.state.user_config
-    chat_manager = request.state.chat_manager
-
-    # Use PROVEN execute_adapter_workflow instead of buggy execute_ported_workflow
-    response_data = await execute_adapter_workflow(
-        workflow_factory=create_deep_research_workflow_factory,  # Ported factory
-        workflow_config=workflow_config,
-        user_message=user_message,
-        user_config=user_config,
-        chat_manager=chat_manager,
-        session=session,
-        chat_memory=chat_memory,
-        logger=logger
-    )
-
-    # Return JSON response (ported workflows use JSON, adapted use HTML)
-    return JSONResponse(content=response_data)
+# LEGACY CHAT ENDPOINT REMOVED
+# Workflow execution is now handled centrally through /api/workflow/{workflow}/session/{session_id}
+# in super_starter_suite/chat_bot/workflow_execution/workflow_endpoints.py

@@ -1,12 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Super Starter Suite</title>
-    <link rel="stylesheet" href="/static/main_style.classic.css">
-    <link rel="stylesheet" href="/static/config_ui.classic.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/static/assets/themes/classic/main_style.css">
+    <link rel="stylesheet" href="/static/assets/themes/classic/config_ui.css">
+    <!-- Prism.js theme - using CDN for consistency -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/assets/syntax/prism.css">
 </head>
+
 <body>
     <div class="container">
         <!-- Left Panel (Collapsible Menu) -->
@@ -15,15 +21,25 @@
                 <span class="icon">&#9776;</span> <!-- Hamburger icon -->
             </div>
             <ul class="menu-list">
-                <li><button id="login-btn" class="menu-button"><img src="/static/icons/login.png" alt="Login" width="20" height="20" class="icon-img"><span> Login / Associate User</span></button></li>
-                <li><button id="settings-btn" class="menu-button"><img src="/static/icons/settings.png" alt="Settings" width="20" height="20" class="icon-img"><span> Settings</span></button></li>
-                <li><button id="config-btn" class="menu-button"><img src="/static/icons/config.png" alt="Configuration" width="20" height="20" class="icon-img"><span> Configuration</span></button></li>
-                <li><button id="generate-btn" class="menu-button"><img src="/static/icons/generate.png" alt="Generate" width="20" height="20" class="icon-img"><span> Generate</span></button></li>
-                <li><button id="chat-history-btn" class="menu-button"><img src="/static/icons/chat_history.png" alt="Chat History" width="20" height="20" class="icon-img" onerror="this.src='/static/icons/settings.png'"><span> Chat History</span></button></li>
+                <li><button id="login-btn" class="menu-button"><img src="/static/assets/icons/login.png" alt="Login"
+                            width="20" height="20" class="icon-img"><span> Login / Associate User</span></button></li>
+                <li><button id="settings-btn" class="menu-button"><img src="/static/assets/icons/settings.png"
+                            alt="Settings" width="20" height="20" class="icon-img"><span> Settings</span></button></li>
+                <li><button id="config-btn" class="menu-button"><img src="/static/assets/icons/config.png"
+                            alt="Configuration" width="20" height="20" class="icon-img"><span>
+                            Configuration</span></button></li>
+                <li><button id="generate-btn" class="menu-button"><img src="/static/assets/icons/generate.png"
+                            alt="Generate" width="20" height="20" class="icon-img"><span> Generate</span></button></li>
+                <li><button id="chat-history-btn" class="menu-button"><img src="/static/assets/icons/chat_history.png"
+                            alt="Chat History" width="20" height="20" class="icon-img"><span> Chat
+                            History</span></button></li>
                 <li class="menu-group-title" data-group="dynamic-workflows">
                     <div class="group-header">
-                        <button id="dynamic-workflows-group-btn" class="menu-button group-workflow" data-group="dynamic-workflows"><img src="/static/icons/dynamic_group.png" class="icon-img"><span> Dynamic Workflows</span></button>
-                        <button class="menu-button group-toggle" data-group="dynamic-workflows"><span class="icon">&#9776;</span></button>
+                        <button id="dynamic-workflows-group-btn" class="menu-button group-workflow"
+                            data-group="dynamic-workflows"><img src="/static/assets/icons/dynamic_group.png" width="20"
+                                height="20" class="icon-img"><span> Dynamic Workflows</span></button>
+                        <button class="menu-button group-toggle" data-group="dynamic-workflows"><span
+                                class="icon">▼</span></button>
                     </div>
                     <div class="group-content" id="dynamic-workflows-content">
                         <ul class="workflows-list">
@@ -40,7 +56,12 @@
         <div class="main-content">
             <!-- Top Panel (Status Bar) -->
             <div class="top-panel" id="status-bar">
-                <div id="status-static-info">Loading...</div>
+                <div id="status-static-info">
+                    <div id="status-user">User: Loading...</div>
+                    <div id="status-provider">Provider: Loading...</div>
+                    <div id="status-model">Model: Loading...</div>
+                    <div id="status-workflow">Workflow: Loading...</div>
+                </div>
                 <div id="status-dynamic-message">Ready</div>
             </div>
 
@@ -59,7 +80,7 @@
                     <div class="workflow-selection">
                         <h3>Available Workflows</h3>
                         <div class="workflow-grid" id="dynamic-workflow-grid">
-                            <!-- Workflows will be dynamically populated here from /api/workflows endpoint -->
+                            <!-- Workflows will be dynamically populated here from /api/system/workflows endpoint -->
                             <div class="loading-workflows">
                                 <div class="loading-spinner"></div>
                                 Loading available workflows...
@@ -90,7 +111,51 @@
 
                 <!-- Chat Interface -->
                 <div id="chat-interface" class="chat-interface" style="display: none;">
-                    <div id="message-container" class="message-container"></div>
+                    <!-- Content area: messages + artifacts (side by side) -->
+                    <div class="chat-content-area">
+                        <div id="message-container" class="message-container"></div>
+
+                        <!-- Artifact Resizer - between message and panel -->
+                        <div class="artifact-resizer" id="artifact-resizer"></div>
+
+                        <!-- Artifact Panel - Initially hidden, normal flow positioning -->
+                        <div id="artifact-panel" class="artifact-panel hidden">
+                            <div class="artifact-header">
+                                <h3>📎 Generated <span id="artifact-language">Code</span></h3>
+                                <span class="artifact-meta-compact" id="artifact-char-count">0 chars</span>
+                                <div class="artifact-header-actions">
+                                    <button class="artifact-action-btn"
+                                        onclick="window.artifactDisplayManager?.copyArtifact(0)"
+                                        title="Copy">📋</button>
+                                    <div class="save-dropdown">
+                                        <button class="artifact-action-btn" title="Save options">💾</button>
+                                        <div class="save-dropdown-content">
+                                            <a href="javascript:void(0)"
+                                                onclick="window.artifactDisplayManager?.saveAsPDF(0)">📄 Save as PDF</a>
+                                            <a href="javascript:void(0)"
+                                                onclick="window.artifactDisplayManager?.saveAsRichText(0)">📝 Save as
+                                                Rich Text</a>
+                                            <a href="javascript:void(0)"
+                                                onclick="window.artifactDisplayManager?.saveAsRawText(0)">💻 Save as Raw
+                                                Text</a>
+                                        </div>
+                                    </div>
+                                    <button id="artifact-panel-close" class="artifact-close-btn"
+                                        title="Close">×</button>
+                                </div>
+                            </div>
+                            <div class="artifact-content">
+                                <div class="artifact-item compact">
+                                    <!-- Future: multi-tab header for multiple artifacts/versions -->
+                                </div>
+                                <div id="artifact-display-area" class="artifact-scroll-area">
+                                    <!-- Full artifact content will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input area: always at bottom, spans full width -->
                     <div class="input-area">
                         <div class="input-controls">
                             <button id="new-session-btn" class="new-session-btn" title="Start New Session">
@@ -114,35 +179,76 @@
 
                 <!-- Chat History UI Container -->
                 <div id="chat-history-ui-container" class="config-ui-container" style="display: none;">
-                    <!-- Chat History UI will be loaded here -->
+                    <!-- Chat History UI will be loaded here by history module -->
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Phase 5.6D Frontend Modularization - Load modularized scripts -->
-    <!-- Core modules moved to static root for better organization -->
-    <script src="/static/global-state.js"></script>
-    <script src="/static/main-ui-manager.js"></script>
-    <script src="/static/workflow-manager.js"></script>
-    <script src="/static/modules/chat-ui-manager.js"></script>
-    <script src="/static/modules/artifact-display-manager.js"></script>
+    <!-- ============================================================================
+         BASIC MODULES - Core dependencies loaded first
+         ============================================================================ -->
+    <!-- Session Management Foundation -->
+    <script src="/static/shared/session.js"></script>
 
-    <!-- Legacy UI components still needed -->
-    <script src="/static/config_ui.js"></script>
+    <!-- Core System Infrastructure -->
+    <script src="/static/core/state.js"></script>
+    <script src="/static/core/main.js"></script>
+    <script src="/static/core/interactions.js"></script>
 
-    <!-- Chat-related frontend modules (moved to modules/chat/ for better organization) -->
-    <script src="/static/modules/chat/chat_history_manager.js"></script>
-    <script src="/static/modules/chat/chat_ui_enhancements.js"></script>
-    <script src="/static/modules/chat/session-manager.js"></script>
-    <script src="/static/modules/chat/session-recovery.js"></script>
-    <script src="/static/modules/chat/chat-ui-manager.js"></script>
-    <script src="/static/modules/chat/session-visualizer.js"></script>
+    <!-- Essential Shared Services -->
+    <script src="/static/shared/api.js"></script>
+    <script src="/static/shared/events.js"></script>
+    <script src="/static/shared/markdown_renderer.js"></script>
+    <script src="/static/shared/rich_text_renderer.js"></script>
+    <script src="/static/shared/chat_renderer.js"></script>
+    <script src="/static/shared/artifact_display_manager.js"></script>
+    <script src="/static/shared/prompt_ui.js"></script>
+    <script src="/static/shared/login_modal.js"></script>
 
-    <!-- Human-in-the-loop workflow interaction handling -->
-    <script src="/static/modules/human-in-the-loop-manager.js"></script>
+    <!-- ============================================================================
+         FEATURE MODULES - Specialized UI features loaded after basic modules
+         ============================================================================ -->
+    <!-- Human Interaction & Error Handling -->
+    <script src="/static/shared/human_in_the_loop.js"></script>
+    <script src="/static/shared/error_recovery.js"></script>
+    <script src="/static/shared/citation_processor.js"></script>
+    <script src="/static/shared/chat_enhancements.js"></script>
 
-    <!-- Main application logic (button event handlers, workflow management, etc.) -->
+    <!-- WORKFLOW Type UI (active/live operations) -->
+    <script src="/static/ui/workflow/workflow.js"></script>
+    <script src="/static/ui/workflow/chat.js"></script>
+    <script src="/static/ui/workflow/workflow_controls.js"></script>
+
+    <!-- HISTORY Type UI (static/read-only operations) -->
+    <script src="/static/ui/history/history.js"></script>
+    <script src="/static/ui/history/navigation.js"></script>
+
+    <!-- GENERATE Type UI (RAG generation) -->
+    <script src="/static/ui/generate/generate.js"></script>
+
+    <!-- SETTINGS UI -->
+    <script src="/static/ui/settings.js"></script>
+
+    <!-- ============================================================================
+         SYNTAX HIGHLIGHTING
+         ============================================================================ -->
+    <!-- Prism.js for syntax highlighting - CDN versions for reliability -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+
+    <!-- jspdf and html2canvas for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Local files also available: /static/assets/syntax/prism.js, javascript.js, typescript.js -->
+
+    <!-- ============================================================================
+         MAIN APPLICATION LOGIC
+         ============================================================================ -->
     <script src="/static/script.js"></script>
 </body>
+
 </html>

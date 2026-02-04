@@ -32,20 +32,20 @@ class SessionLifecycleManager:
         self.user_id = user_id
         self.workflow_sessions = self._load_persisted_mappings()
 
-    def get_or_create_workflow_session(self, workflow_type: str) -> str:
+    def get_or_create_workflow_session(self, integrate_type: str) -> str:
         """GUARANTEE: One session per workflow, persisted across restarts"""
-        if workflow_type in self.workflow_sessions:
+        if integrate_type in self.workflow_sessions:
             # Verify existing session still valid
-            session_id = self.workflow_sessions[workflow_type]
-            if self._session_exists(workflow_type, session_id):
+            session_id = self.workflow_sessions[integrate_type]
+            if self._session_exists(integrate_type, session_id):
                 return session_id
             else:
                 # Clean up invalid session
-                del self.workflow_sessions[workflow_type]
+                del self.workflow_sessions[integrate_type]
 
         # Create new persistent session
-        new_session = self.chat_manager.create_new_session(workflow_type)
-        self.workflow_sessions[workflow_type] = new_session.session_id
+        new_session = self.chat_manager.create_new_session(integrate_type)
+        self.workflow_sessions[integrate_type] = new_session.session_id
         self._save_mappings()  # PERSIST THE WORKFLOW->SESSION MAPPING
         return new_session.session_id
 ```
@@ -105,7 +105,7 @@ const workflowSessions = {
 class ChatSession:
     session_id: str
     user_id: str
-    workflow_type: str
+    integrate_type: str
     created_at: datetime
     updated_at: datetime
     title: str = ""
@@ -142,14 +142,14 @@ class ChatHistoryConfig:
 ### **2. Core Manager (chat_history/chat_history_manager.py)**
 
 #### **Key Methods:**
-- `create_new_session(workflow_type: str) -> ChatSession`
-- `load_session(workflow_type: str, session_id: str) -> Optional[ChatSession]`
+- `create_new_session(integrate_type: str) -> ChatSession`
+- `load_session(integrate_type: str, session_id: str) -> Optional[ChatSession]`
 - `save_session(session: ChatSession) -> None`
 - `add_message_to_session(session: ChatSession, message: ChatMessageDTO) -> None`
-- `get_all_sessions(workflow_type: str) -> List[ChatSession]`
-- `delete_session(workflow_type: str, session_id: str) -> None`
+- `get_all_sessions(integrate_type: str) -> List[ChatSession]`
+- `delete_session(integrate_type: str, session_id: str) -> None`
 - `get_llama_index_memory(session: ChatSession) -> Optional[ChatMemoryBuffer]`
-- `get_session_stats(workflow_type: str) -> Dict[str, Any]`
+- `get_session_stats(integrate_type: str) -> Dict[str, Any]`
 
 #### **Features:**
 - ✅ **File-based persistence** with JSON storage

@@ -18,8 +18,8 @@ from llama_index.core.workflow import (
 )
 
 
-def create_workflow() -> Workflow:
-    return CLIWorkflow()
+def create_workflow(chat_request=None, timeout_seconds: float = 120.0) -> Workflow:
+    return CLIWorkflow(timeout=timeout_seconds)
 
 
 class CLIWorkflow(Workflow):

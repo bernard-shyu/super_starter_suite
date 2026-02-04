@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi import status, APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import Dict, Any, Optional
@@ -28,15 +28,11 @@ if project_root not in sys.path:
 # Now we can import from the super_starter_suite package
 from super_starter_suite.shared.config_manager import config_manager, UserConfig
 from super_starter_suite.shared.workflow_loader import get_all_workflow_configs, load_all_workflows
+from super_starter_suite.shared.llama_utils import list_external_models
 
 # Initialize event system for clean IPC architecture
 from super_starter_suite.rag_indexing.event_system import initialize_event_system
 _event_emitter = initialize_event_system(config_manager)
-
-# Initialize SessionAuthority singleton (SINGLE SOURCE OF TRUTH for all session management)
-from super_starter_suite.chat_bot.session_authority import session_authority as _session_authority_singleton
-# Force singleton initialization on startup
-_session_authority = _session_authority_singleton
 
 # Get logger for main application
 main_logger = config_manager.get_logger("main")
@@ -51,6 +47,11 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "frontend" / 
 
 # Templates for serving HTML
 templates = Jinja2Templates(directory=Path(__file__).parent / "frontend" / "static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(Path(__file__).parent / "frontend/static/favicon.ico")
+
 
 # --- Startup and Shutdown Events ---
 @app.on_event("startup")
@@ -84,7 +85,7 @@ async def user_session_middleware(request: Request, call_next):
     # WebSocket connection detected (no debug logging needed)
 
     # -------------------------------------------------
-    response = await call_next(request)
+    response = await call_next(request)   # Continue to routing
 
     # -------------------------------------------------
     # Inject model provider and model ID into response
@@ -105,9 +106,13 @@ async def user_session_middleware(request: Request, call_next):
 
 # --- API Endpoints ---
 from super_starter_suite.shared.decorators import bind_user_context
+
+# Bootstrap endpoint - CANNOT set domain here, called before user_config exists
+# Decorators handle domain classification after association establishes user_config
 @bind_user_context
-@app.post("/api/associate_user")
+@app.post("/api/user_state/associate_user")
 async def associate_user(request: Request, user_data: Dict[str, str]):
+    """BOOTSTRAP ENDPOINT: User association - domain set by decorators"""
     user_id = user_data.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="User ID is required")
@@ -115,15 +120,40 @@ async def associate_user(request: Request, user_data: Dict[str, str]):
     config_manager.associate_user_ip(client_ip, user_id)
     return {"message": f"User {user_id} associated with IP {client_ip}"}
 
-@bind_user_context
-@app.get("/api/settings")
+@app.get("/api/system/known_users")
+async def get_known_users():
+    """Returns a list of unique user IDs based on config/settings.<USER_ID>.toml files"""
+    config_dir = Path(__file__).parent / "config"
+    users = set()
+    if config_dir.exists():
+        for toml_file in config_dir.glob("settings.*.toml"):
+            # Extract USER_ID from settings.USER_ID.toml
+            parts = toml_file.name.split('.')
+            if len(parts) >= 3:
+                user_id = parts[1]
+                users.add(user_id)
+    
+    # Ensure Default is always there or at least accounted for if it exists
+    return {"users": sorted(list(users))}
+
+@app.get("/api/system/models/list")
+async def list_models(request: Request, source: str):
+    """Fetches model list from specified source: 'system', 'nvidia', 'openrouter', 'azure'"""
+    result = list_external_models(source)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+# Entry points now derive domains from path (no manual setting needed)
+@app.get("/api/system/settings")
 async def get_settings(request: Request):
+    """SYSTEM ENDPOINT: Domain automatically derived from path"""
     user_id = request.state.user_id
     return config_manager.get_merged_config(user_id)
 
-@bind_user_context
-@app.post("/api/settings")
+@app.post("/api/system/settings")
 async def update_settings(request: Request, settings_data: Dict[str, Any]):
+    """SYSTEM ENDPOINT: Domain automatically derived from path"""
     user_id = request.state.user_id
     config_manager.save_user_settings(user_id, settings_data)
     # Reload config for current request state to ensure middleware uses updated settings
@@ -131,13 +161,13 @@ async def update_settings(request: Request, settings_data: Dict[str, Any]):
     return {"message": "Settings updated successfully"}
 
 @bind_user_context
-@app.get("/api/config")
+@app.get("/api/system/config")
 async def get_config(request: Request):
     # Return system configuration only, not user-specific merged config
     return config_manager.load_system_config()
 
 @bind_user_context
-@app.post("/api/config")
+@app.post("/api/system/config")
 async def update_config(request: Request, config_data: Dict[str, Any]):
     user_id = request.state.user_id
     # Save system configuration using ConfigManager only
@@ -155,22 +185,44 @@ async def get_user_state(request: Request):
     model_provider = chatbot_model.get("PROVIDER", "")
     model_id = chatbot_model.get("ID", "")
 
-    # Get current workflow from user state (this would need to be stored somewhere)
-    # For now, return default or empty
-    current_workflow = user_config.get_user_setting("USER_PREFERENCES", {}).get("current_workflow", "")
+    # Get current workflow from user_state.toml [CURR_WORKFLOW] section
+    current_workflow = user_config.my_workflow
     main_logger.debug(f"get_user_state:: USER={user_config.user_id}  WORKFLOW={current_workflow}  MODEL_PROVIDER={model_provider}  MODEL_ID={model_id}")
 
     return {
+        "current_user": user_config.user_id,
         "current_workflow": current_workflow,
         "current_model_provider": model_provider,
         "current_model_id": model_id
     }
 
+@bind_user_context
+@app.post("/api/user_state/workflow")
+async def update_user_workflow(request: Request, workflow_data: Dict[str, str]):
+    """Update the current workflow for the user in user_state.toml"""
+    user_config = request.state.user_config
+    workflow = workflow_data.get("workflow")
+
+    if not workflow:
+        raise HTTPException(status_code=400, detail="Workflow is required")
+
+    try:
+        # Update the workflow in user_state.toml
+        config_manager.update_user_workflow(user_config.user_id, workflow)
+
+        # Reload user config to reflect the change
+        request.state.user_config = config_manager.get_user_config(user_config.user_id)
+
+        main_logger.debug(f"update_user_workflow:: USER={user_config.user_id}  WORKFLOW={workflow}")
+        return {"message": f"Workflow updated to {workflow}", "workflow": workflow}
+    except Exception as e:
+        main_logger.error(f"Failed to update workflow for user {user_config.user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update workflow")
+
 # RAG management endpoints are now handled by the rag_indexing module
 # Import RAG Indexing router and WebSocket router
 try:
     from super_starter_suite.rag_indexing.generate_websocket import router as websocket_router
-    main_logger.debug("STARTUP] WebSocket router imported successfully")
 except Exception as e:
     main_logger.warning(f"[STARTUP] ERROR: Failed to import WebSocket router: {e}")
     import traceback
@@ -183,24 +235,39 @@ app.include_router(rag_indexing_router, tags=["RAG Indexing"])
 
 if websocket_router is not None:
     app.include_router(websocket_router, tags=["WebSocket"])
-    main_logger.debug(f"[STARTUP] WebSocket router included successfully")
 else:
     main_logger.warning("[STARTUP] WARNING: WebSocket router not available - skipping inclusion")
 
+
 # --- Workflow Endpoints (mounted via APIRouter) ---
-# Dynamically load and include workflow routers
+# Import and include consolidated workflow endpoints FIRST (higher precedence)
+try:
+    from super_starter_suite.chat_bot.workflow_execution.workflow_endpoints import router as workflow_router
+except Exception as e:
+    main_logger.warning(f"[STARTUP] ERROR: Failed to import consolidated workflow endpoints router: {e}")
+    import traceback
+    traceback.print_exc()
+    workflow_router = None
+
+if workflow_router is not None:
+    # Mount it at the root /api for cleaner paths (e.g. /api/workflow/execute)
+    app.include_router(workflow_router, prefix="/api")
+else:
+    main_logger.warning("[STARTUP] WARNING: Consolidated workflow endpoints router not available - skipping inclusion")
+
+# Dynamically load and include workflow routers AFTER (lower precedence)
 workflow_configs = get_all_workflow_configs()
 loaded_workflows = load_all_workflows()
 
 for workflow_id, (router, _, _, _) in loaded_workflows.items():
     workflow_config = workflow_configs.get(workflow_id)
     if workflow_config:
-        prefix = f"/api/workflow/{workflow_id}"
+        prefix = f"/api/workflow/{workflow_id}/business_logic"
         # Ensure tags is a list of strings, as expected by FastAPI
         tags = [workflow_config.display_name]
-        
+
         app.include_router(router, prefix=prefix, tags=tags)
-        main_logger.debug(f"[STARTUP] Included router for workflow '{workflow_id}' at '{prefix}' with tags '{tags}'")
+        app.include_router(router, prefix=prefix, tags=tags)
     else:
         main_logger.warning(f"Workflow configuration not found for '{workflow_id}'. Skipping router inclusion.")
 
@@ -208,16 +275,11 @@ for workflow_id, (router, _, _, _) in loaded_workflows.items():
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-# Remaining endpoints are now handled by the rag_indexing module
-
-
-
-# Cache management endpoints are now handled by the rag_indexing module
 
 # --- Theme Management Endpoints ---
 
 @bind_user_context
-@app.get("/api/themes")
+@app.get("/api/system/themes")
 async def get_available_themes(request: Request):
     """
     Get the list of available themes from system configuration.
@@ -226,7 +288,7 @@ async def get_available_themes(request: Request):
     return {"themes": themes}
 
 @bind_user_context
-@app.get("/api/themes/current")
+@app.get("/api/system/themes/current")
 async def get_current_theme(request: Request):
     """
     Get the current theme preference for the authenticated user.
@@ -236,7 +298,7 @@ async def get_current_theme(request: Request):
     return {"theme": theme}
 
 @bind_user_context
-@app.post("/api/themes/current")
+@app.post("/api/system/themes/current")
 async def update_current_theme(request: Request, theme_data: Dict[str, str]):
     """
     Update the theme preference for the authenticated user.
@@ -253,11 +315,29 @@ async def update_current_theme(request: Request, theme_data: Dict[str, str]):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# --- RAG-ROOT File Serving ---
+@app.get("/api/files/chat_history/{workflow_id}/output/{filename}")
+async def serve_rag_root_file(request: Request, workflow_id: str, filename: str):
+    """
+    Serve files (charts, images) from the user's RAG-ROOT directory.
+    Usage: /api/files/chat_history/P_financial_report/output/e2b_file_....png
+    """
+    user_id = request.state.user_id
+    user_config = config_manager.get_user_config(user_id)
+    rag_root = user_config.my_rag_root
+    
+    file_path = os.path.join(rag_root, "chat_history", workflow_id, "output", filename)
+    
+    if not os.path.exists(file_path):
+        main_logger.warning(f"RAG-ROOT file not found: {file_path}")
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(file_path)
+
 # --- Chat History API Endpoints ---
 # Import and include chat history data CRUD endpoints
 try:
     from super_starter_suite.chat_bot.chat_history.data_crud_endpoint import router as data_crud_router
-    main_logger.debug("[STARTUP] Chat history data CRUD router imported successfully")
 except Exception as e:
     main_logger.warning(f"[STARTUP] ERROR: Failed to import chat history data CRUD router: {e}")
     import traceback
@@ -265,17 +345,14 @@ except Exception as e:
     data_crud_router = None
 
 if data_crud_router is not None:
-    app.include_router(data_crud_router, prefix="/api", tags=["Chat History Data"])
-    main_logger.debug("[STARTUP] Chat history data CRUD router included successfully")
+    app.include_router(data_crud_router)
 else:
     main_logger.warning("[STARTUP] WARNING: Chat history data CRUD router not available - skipping inclusion")
 
-# --- Session Management Imports ---
-from super_starter_suite.chat_bot.chat_history.chat_history_manager import ChatHistoryManager, SessionLifecycleManager
 
 # Session lifecycle management endpoint
 @bind_user_context
-@app.get("/api/workflows")
+@app.get("/api/system/workflows")
 async def get_available_workflows(request: Request):
     """Get list of available workflows with their metadata."""
     try:
@@ -289,7 +366,17 @@ async def get_available_workflows(request: Request):
                 "description": getattr(config, 'description', ''),
                 "icon": getattr(config, 'icon', '🤖'),
                 "timeout": getattr(config, 'timeout', 60.0),
-                "code_path": config.code_path
+                "code_path": config.code_path,
+                "ui_pattern": getattr(config, 'ui_pattern', None),
+                "enhanced_rendering": getattr(config, 'enhanced_rendering', None),
+                # 🎯 UI CONFIGURATION: Include rendering flags for frontend citation processing
+                "ui_config": {
+                    "show_citation": getattr(config, 'show_citation', "Short"),
+                    "show_tool_calls": getattr(config, 'show_tool_calls', False),
+                    "show_followup_questions": getattr(config, 'show_followup_questions', False),
+                    "show_workflow_states": getattr(config, 'show_workflow_states', False),
+                    "artifacts_enabled": getattr(config, 'artifacts_enabled', False)
+                }
             })
 
         return {"workflows": workflows}
@@ -297,86 +384,6 @@ async def get_available_workflows(request: Request):
         main_logger.error(f"Error retrieving workflow configurations: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve workflows")
 
-@bind_user_context
-@app.get("/api/workflow_sessions/{workflow}/id")
-async def get_workflow_session_id(request: Request, workflow: str):
-    """Get existing active SESSION MAPPING for a workflow (SINGLE RESPONSIBILITY: ChatHistoryManager owns workflow_sessions.json)."""
-    user_config = request.state.user_config
-
-    try:
-        # SINGLE RESPONSIBILITY: ChatHistoryManager owns persistent workflow-to-session mappings
-        chat_manager = ChatHistoryManager(user_config)
-        user_id = getattr(user_config, 'user_id', 'Default')
-        session_lifecycle = SessionLifecycleManager(user_id, chat_manager)
-
-        # Get the ACTIVE SESSION ID from persistent workflow_sessions.json mapping
-        session_id = session_lifecycle.get_active_session_id(workflow)
-
-        if session_id:
-            # Verify the session still exists
-            session = chat_manager.load_session(workflow, session_id)
-            if session:
-                main_logger.debug(f"Returning active session {session_id[:8]} for {workflow} from workflow_sessions.json")
-                return {"session_id": session_id}
-            else:
-                # Session file missing - clean up the mapping
-                main_logger.warning(f"Active session {session_id} file missing for {workflow}, cleaning mapping")
-                if workflow in session_lifecycle.workflow_sessions:
-                    del session_lifecycle.workflow_sessions[workflow]
-                    session_lifecycle._save_mappings()
-
-        # No valid active session mapping found - try to find the most recent session and make it active
-        sessions = chat_manager.get_all_sessions(workflow)
-        if sessions and len(sessions) > 0:
-            latest_session = sessions[0]  # get_all_sessions returns sorted by updated_at desc
-            session_id = latest_session.session_id
-            main_logger.debug(f"Making latest session {session_id[:8]} active for {workflow}")
-
-            # UPDATE workflow_sessions.json with this active session
-            session_lifecycle.workflow_sessions[workflow] = session_id
-            session_lifecycle._save_mappings()
-
-            return {"session_id": session_id}
-
-        # No sessions exist for this workflow
-        main_logger.debug(f"No sessions found for {workflow}")
-        return {"session_id": None}
-
-    except Exception as e:
-        main_logger.error(f"Error getting session ID for workflow {workflow}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get session ID")
-
-# Import and include chat executor endpoints
-try:
-    from super_starter_suite.chat_bot.workflow_execution.executor_endpoint import router as executor_router
-    main_logger.debug("[STARTUP] Chat executor router imported successfully")
-except Exception as e:
-    main_logger.warning(f"[STARTUP] ERROR: Failed to import chat executor router: {e}")
-    import traceback
-    traceback.print_exc()
-    executor_router = None
-
-if executor_router is not None:
-    app.include_router(executor_router, prefix="/api", tags=["Chat Executor"])
-    main_logger.debug("[STARTUP] Chat executor router included successfully")
-else:
-    main_logger.warning("[STARTUP] WARNING: Chat executor router not available - skipping inclusion")
-
-# Import and include human-in-the-loop (HITL) endpoint
-try:
-    from super_starter_suite.chat_bot.hitl_endpoint import router as hitl_router
-    main_logger.debug("[STARTUP] HITL endpoint router imported successfully")
-except Exception as e:
-    main_logger.warning(f"[STARTUP] ERROR: Failed to import HITL endpoint router: {e}")
-    import traceback
-    traceback.print_exc()
-    hitl_router = None
-
-if hitl_router is not None:
-    app.include_router(hitl_router, prefix="/api", tags=["Human-In-The-Loop"])
-    main_logger.debug("[STARTUP] HITL endpoint router included successfully")
-else:
-    main_logger.warning("[STARTUP] WARNING: HITL endpoint router not available - skipping inclusion")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

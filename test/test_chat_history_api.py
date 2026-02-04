@@ -50,7 +50,7 @@ class TestChatHistoryAPI:
         mock_sessions = [
             {
                 'session_id': self.test_session_id,
-                'workflow_type': 'agentic_rag',
+                'integrate_type': 'agentic_rag',
                 'created_at': datetime.now().isoformat(),
                 'messages': [
                     {
@@ -93,7 +93,7 @@ class TestChatHistoryAPI:
         mock_manager = MagicMock()
         mock_session = {
             'session_id': self.test_session_id,
-            'workflow_type': 'code_generator',
+            'integrate_type': 'code_generator',
             'created_at': datetime.now().isoformat(),
             'messages': []
         }
@@ -105,7 +105,7 @@ class TestChatHistoryAPI:
         assert response.status_code == 200
         data = response.json()
         assert data['session_id'] == self.test_session_id
-        assert data['workflow_type'] == 'code_generator'
+        assert data['integrate_type'] == 'code_generator'
 
     @patch('super_starter_suite.chat_history.api.ChatHistoryManager')
     def test_get_session_not_found(self, mock_manager_class):
@@ -126,7 +126,7 @@ class TestChatHistoryAPI:
         mock_manager = MagicMock()
         new_session = {
             'session_id': self.test_session_id,
-            'workflow_type': 'deep_research',
+            'integrate_type': 'deep_research',
             'created_at': datetime.now().isoformat(),
             'messages': []
         }
@@ -134,7 +134,7 @@ class TestChatHistoryAPI:
         mock_manager_class.return_value = mock_manager
 
         request_data = {
-            'workflow_type': 'deep_research',
+            'integrate_type': 'deep_research',
             'user_id': self.test_user_id
         }
 
@@ -143,17 +143,17 @@ class TestChatHistoryAPI:
         assert response.status_code == 201
         data = response.json()
         assert data['session_id'] == self.test_session_id
-        assert data['workflow_type'] == 'deep_research'
+        assert data['integrate_type'] == 'deep_research'
 
     def test_create_session_invalid_data(self):
         """Test session creation with invalid data"""
-        # Missing workflow_type
+        # Missing integrate_type
         response = self.client.post('/api/chat_history/sessions', json={})
         assert response.status_code == 422
 
-        # Invalid workflow_type
+        # Invalid integrate_type
         response = self.client.post('/api/chat_history/sessions', json={
-            'workflow_type': 'invalid_workflow'
+            'integrate_type': 'invalid_workflow'
         })
         assert response.status_code == 422
 
@@ -227,7 +227,7 @@ class TestChatHistoryAPI:
         export_data = {
             'session': {
                 'session_id': self.test_session_id,
-                'workflow_type': 'agentic_rag',
+                'integrate_type': 'agentic_rag',
                 'messages': []
             },
             'exported_at': datetime.now().isoformat()

@@ -67,9 +67,9 @@ class WorkflowServer:
 # shared/workflow_utils.py - Enhanced with bridge utilities
 def create_chat_request(messages, metadata=None)  # Adapt from STARTER_TOOLS
 def validate_request_payload(payload)              # Standard validation
-def format_workflow_response(result, workflow_type) # Consistent formatting
-def handle_workflow_error(error, workflow_type)    # Standardized error handling
-def get_workflow_settings(workflow_type)           # Leverage existing settings
+def format_workflow_response(result, integrate_type) # Consistent formatting
+def handle_workflow_error(error, integrate_type)    # Standardized error handling
+def get_workflow_settings(integrate_type)           # Leverage existing settings
 ```
 
 **Approach**: **Extend existing workflow_utils.py**
@@ -171,13 +171,13 @@ class ChatBotManager:
     def __init__(self):
         self.workflow_server = WorkflowServer()
 
-    async def start_conversation(self, workflow_type):
+    async def start_conversation(self, integrate_type):
         """Start new ChatBOT session"""
         session_id = uuid.uuid4()
         return {
             'session_id': session_id,
             'status': 'started',
-            'workflow_type': workflow_type
+            'integrate_type': integrate_type
         }
 
     async def process_message(self, session_id, user_message):
@@ -204,7 +204,7 @@ class ChatBotManager:
 ```python
 # In main FastAPI app or dedicated router
 @router.post("/chatbot/start")
-async def start_chatbot_session(workflow_type: str):
+async def start_chatbot_session(integrate_type: str):
     """Start new ChatBOT conversation session"""
 
 @router.post("/chatbot/{session_id}/chat")
@@ -254,7 +254,7 @@ class ChatBotInterface {
     async startSession(workflowType) {
         const response = await fetch('/api/chatbot/start', {
             method: 'POST',
-            body: JSON.stringify({workflow_type: workflowType})
+            body: JSON.stringify({integrate_type: workflowType})
         });
         const data = await response.json();
         this.sessionId = data.session_id;

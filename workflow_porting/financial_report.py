@@ -13,48 +13,38 @@ All business logic must be reimplemented locally in this file.
 """
 
 import os
-from fastapi import APIRouter, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request
 from typing import Dict, Any, Optional, List
-from super_starter_suite.shared.decorators import bind_workflow_session
-from super_starter_suite.shared.workflow_utils import execute_adapter_workflow
-from super_starter_suite.shared.dto import MessageRole, create_chat_message
 
 # COMPLETE Pattern C: No imports from STARTER_TOOLS - full workflow reimplementation
 from llama_index.core.workflow import Workflow, Context, Event, StartEvent, StopEvent, step
 from llama_index.server.api.models import (
-    ChatAPIMessage, ChatRequest, Artifact, ArtifactEvent,
-    AgentRunEvent
+    ChatRequest, AgentRunEvent
 )
 from llama_index.core.base.llms.types import ChatMessage as LlamaChatMessage, MessageRole as LlamaMessageRole
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import QueryEngineTool, FunctionTool, ToolSelection
 from llama_index.core.llms.function_calling import FunctionCallingLLM
 from llama_index.core.settings import Settings
-from llama_index.server.tools.document_generator import DocumentGenerator
+from super_starter_suite.shared.tools.document_generator import DocumentGenerator
 from llama_index.server.tools.index import get_query_engine_tool
-from llama_index.server.tools.interpreter import E2BCodeInterpreter
-from super_starter_suite.shared.artifact_utils import extract_artifact_metadata
+# Import local utilities instead of site-packages
+from super_starter_suite.shared.tools.interpreter import E2BCodeInterpreter
+from super_starter_suite.shared.agent_utils import (
+    call_tools,
+    chat_with_tools,
+)
 from pydantic import BaseModel, Field
 
 import time
 from super_starter_suite.shared.config_manager import config_manager
 from super_starter_suite.shared.workflow_loader import get_workflow_config
-# Import STARTER_TOOLS utilities (acceptable for utility functions)
-from llama_index.server.utils.agent_tool import (
-    call_tools,
-    chat_with_tools,
-)
 
-logger = config_manager.get_logger("workflow.ported.financial_report")
+logger = config_manager.get_logger("workflow.ported")
 router = APIRouter()
 
-# SINGLE HARD-CODED ID FOR CONFIG LOOKUP - All other naming comes from DTO
-workflow_ID = "P_financial_report"
-
 # Load config for derived naming (no hard-coded text beyond workflow_ID)
-workflow_config = get_workflow_config(workflow_ID)
-# Validation happens in workflow_loader.py - assume config is correct
+workflow_config = get_workflow_config("P_financial_report")
 
 # ====================================================================================
 # STEP 1-2: COMPLETE BUSINESS LOGIC REIMPLEMENTATION (PATTERN C)
@@ -144,20 +134,22 @@ class FinancialReportWorkflow(Workflow):
         user_msg = ev.get("user_msg")
         chat_history = ev.get("chat_history")
 
+        # Pattern C: Reimplement memory initialization (strictly controlled order)
+        # 1. ALWAYS ADD SYSTEM PROMPT FIRST if it exists
+        if self.system_prompt:
+            self.memory.put(LlamaChatMessage(
+                role=LlamaMessageRole.SYSTEM, 
+                content=self.system_prompt
+            ))
+
+        # 2. Add historical context
         if chat_history is not None:
             self.memory.put_messages(chat_history)
 
-        # Add user message to memory
+        # 3. Add current user message last
         self.memory.put(LlamaChatMessage(role=LlamaMessageRole.USER, content=user_msg))
 
-        # Add system prompt for financial analysis
-        if self.system_prompt:
-            system_msg = LlamaChatMessage(
-                role=LlamaMessageRole.SYSTEM, content=self.system_prompt
-            )
-            self.memory.put(system_msg)
-
-        logger.info(f"Pattern C: Prepared financial workflow for: {user_msg[:50]}...")
+        logger.info(f"[FINANCE] START: Preparing for '{user_msg[:50]}...'")
         return InputEvent(input=self.memory.get())
 
     @step()
@@ -171,7 +163,7 @@ class FinancialReportWorkflow(Workflow):
 
         Analyze user request and determine next phase: research, analysis, or reporting
         """
-        logger.info("Pattern C: Analyzing user request for tool selection...")
+        logger.info("[FINANCE] ANALYZE: Selecting tools")
 
         chat_history: list[LlamaChatMessage] = ev.input
 
@@ -183,14 +175,13 @@ class FinancialReportWorkflow(Workflow):
         )
 
         if not response.has_tool_calls():
-            logger.info("Pattern C: No tool calls needed - providing final response")
-            # Provide the direct response and terminate workflow
-            direct_response = await response.full_response()
-            return StopEvent(result=direct_response)
+            logger.info("[FINANCE] RESPONSE: Generating direct answer")
+            # Return the generator for direct streaming to the UI
+            return StopEvent(result=response.generator)
 
         # Pattern C: Reimplement tool validation (support one tool at a time)
         if response.is_calling_different_tools():
-            logger.warning("Pattern C: Multiple tool types called simultaneously - forcing sequential execution")
+            logger.warning("[FINANCE] WARN: Multiple tool types called - forcing sequence")
             self.memory.put(
                 LlamaChatMessage(
                     role=LlamaMessageRole.ASSISTANT,
@@ -199,18 +190,20 @@ class FinancialReportWorkflow(Workflow):
             )
             return InputEvent(input=self.memory.get())
 
-        self.memory.put(response.tool_call_message)
+        if response.tool_call_message:
+            self.memory.put(response.tool_call_message)
 
         tool_name = response.tool_name()
-        logger.info(f"Pattern C: Tool selected: {tool_name}")
+        logger.debug(f"[FINANCE] TOOL: {tool_name}")
 
+        tool_calls = response.tool_calls or []
         # Pattern C: Reimplement tool routing logic (inspired by STARTER_TOOLS)
         if tool_name == self.code_interpreter_tool.metadata.name:
-            return AnalyzeEvent(input=response.tool_calls)
+            return AnalyzeEvent(input=tool_calls)
         elif tool_name == self.document_generator_tool.metadata.name:
-            return ReportEvent(input=response.tool_calls)
+            return ReportEvent(input=tool_calls)
         elif tool_name == self.query_engine_tool.metadata.name:
-            return ResearchEvent(input=response.tool_calls)
+            return ResearchEvent(input=tool_calls)
         else:
             raise ValueError(f"Pattern C: Unknown tool requested: {tool_name}")
 
@@ -221,7 +214,7 @@ class FinancialReportWorkflow(Workflow):
 
         Gather relevant financial data from indexed documents
         """
-        logger.info("Pattern C: Starting research phase...")
+        logger.debug("[FINANCE] RESEARCH: Starting phase")
 
         ctx.write_event_to_stream(
             AgentRunEvent(
@@ -252,7 +245,7 @@ class FinancialReportWorkflow(Workflow):
                 )
             )
 
-        logger.info(f"Pattern C: Research completed - gathered data from {len(tool_call_outputs)} queries")
+        logger.debug(f"[FINANCE] RESEARCH_DONE: {len(tool_call_outputs)} queries")
 
         return AnalyzeEvent(
             input=LlamaChatMessage(
@@ -268,7 +261,7 @@ class FinancialReportWorkflow(Workflow):
 
         Analyze financial data and generate insights/visualizations
         """
-        logger.info("Pattern C: Starting analysis phase...")
+        logger.debug("[FINANCE] ANALYZE: Starting phase")
 
         ctx.write_event_to_stream(
             AgentRunEvent(
@@ -305,7 +298,7 @@ class FinancialReportWorkflow(Workflow):
 
             if not response.has_tool_calls():
                 # No tools needed - direct analysis response
-                msg_content = response.full_response()
+                msg_content = await response.full_response()
                 analyst_msg = LlamaChatMessage(
                     role=LlamaMessageRole.ASSISTANT,
                     content=f"Analyst: \nHere is the analysis result: {msg_content}"
@@ -314,16 +307,21 @@ class FinancialReportWorkflow(Workflow):
                 self.memory.put(analyst_msg)
                 return InputEvent(input=self.memory.get())
             else:
-                tool_calls = response.tool_calls
-                self.memory.put(response.tool_call_message)
+                tool_calls = response.tool_calls or []
+                if response.tool_call_message:
+                    self.memory.put(response.tool_call_message)
 
         # Execute analysis tools (code interpreter) - use imported utility function
-        tool_call_outputs = await call_tools(
-            ctx=ctx,
-            agent_name="Analyst",
-            tools=[self.code_interpreter_tool],
-            tool_calls=tool_calls,
-        )
+        if isinstance(tool_calls, list):
+            tool_call_outputs = await call_tools(
+                ctx=ctx,
+                agent_name="Analyst",
+                tools=[self.code_interpreter_tool],
+                tool_calls=tool_calls,
+            )
+        else:
+            logger.warning("[FINANCE] WARN: Unexpected tool_calls type")
+            tool_call_outputs = []
 
         for tool_call_output in tool_call_outputs:
             self.memory.put(
@@ -337,7 +335,7 @@ class FinancialReportWorkflow(Workflow):
                 )
             )
 
-        logger.info(f"Pattern C: Analysis completed - generated {len(tool_call_outputs)} analysis outputs")
+        logger.debug(f"[FINANCE] ANALYZE_DONE: {len(tool_call_outputs)} outputs")
         return InputEvent(input=self.memory.get())
 
     @step()
@@ -347,7 +345,7 @@ class FinancialReportWorkflow(Workflow):
 
         Create comprehensive financial reports using analysis results
         """
-        logger.info("Pattern C: Starting report generation phase...")
+        logger.debug("[FINANCE] REPORT: Starting phase")
 
         ctx.write_event_to_stream(
             AgentRunEvent(
@@ -378,7 +376,7 @@ class FinancialReportWorkflow(Workflow):
                 )
             )
 
-        logger.info(f"Pattern C: Report generation completed - created {len(tool_call_outputs)} documents")
+        logger.debug(f"[FINANCE] REPORT_DONE: {len(tool_call_outputs)} documents")
         return InputEvent(input=self.memory.get())
 
     # ====================================================================================
@@ -394,7 +392,7 @@ class FinancialReportWorkflow(Workflow):
         try:
             return llm.chat_with_tools(tools=tools, messages=chat_history)
         except Exception as e:
-            logger.error(f"Pattern C: Error in chat_with_tools: {e}")
+            logger.error(f"[FINANCE] Error in chat_with_tools: {e}")
             raise
 
     async def _call_tools(self, ctx, agent_name, tools, tool_calls):
@@ -412,7 +410,7 @@ class FinancialReportWorkflow(Workflow):
                         break
 
                 if tool is None:
-                    logger.error(f"Pattern C: Tool not found: {tool_call.tool_name}")
+                    logger.error(f"[FINANCE] Tool not found: {tool_call.tool_name}")
                     continue
 
                 # Execute tool
@@ -426,7 +424,7 @@ class FinancialReportWorkflow(Workflow):
                 })())
 
             except Exception as e:
-                logger.error(f"Pattern C: Error calling {tool_call.tool_name}: {e}")
+                logger.error(f"[FINANCE] Error calling {tool_call.tool_name}: {e}")
                 tool_call_outputs.append(type('ToolCallOutput', (), {
                     'tool_output': type('ToolOutput', (), {
                         'content': f"Error executing {tool_call.tool_name}: {str(e)}",
@@ -440,7 +438,8 @@ class FinancialReportWorkflow(Workflow):
 # ====================================================================================
 # STEP 3: COMPLETE FACTORY FUNCTION REIMPLEMENTATION (PATTERN C)
 # ====================================================================================
-def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
+
+def create_workflow(chat_request: ChatRequest, timeout_seconds: float = 300.0) -> Workflow:
     """
     Pattern C: Factory function reimplemented without STARTER_TOOLS dependency
 
@@ -466,68 +465,47 @@ def create_workflow(chat_request: Optional[ChatRequest] = None) -> Workflow:
                 "E2B_API_KEY is required to use the code interpreter tool. Please check README.md to know how to get the key."
             )
 
-        code_interpreter_tool = E2BCodeInterpreter(api_key=e2b_api_key).to_tool()
+        # PATTERN C: Calculate RAG-ROOT output directory for tool artifacts
+        user_config = config_manager.get_user_config(chat_request.id)
+        rag_root = user_config.my_rag_root
+        target_output_dir = os.path.join(rag_root, "chat_history", "P_financial_report", "output")
+        os.makedirs(target_output_dir, exist_ok=True)
+        
+        code_interpreter_tool = E2BCodeInterpreter(
+            api_key=e2b_api_key,
+            output_dir=target_output_dir
+        ).to_tool()
 
         # Document generator tool (reimplementation approach)
         try:
             from llama_index.server.settings import server_settings
             document_generator_tool = DocumentGenerator(
                 file_server_url_prefix=server_settings.file_server_url_prefix,
+                output_dir=target_output_dir
             ).to_tool()
         except Exception as e:
             # Fallback if server settings not available
-            document_generator_tool = DocumentGenerator(file_server_url_prefix="http://localhost:8000/files").to_tool()
+            document_generator_tool = DocumentGenerator(
+                file_server_url_prefix="http://localhost:8000/files",
+                output_dir=target_output_dir
+            ).to_tool()
 
-        logger.debug("Pattern C: Financial workflow tools initialized successfully")
+        logger.debug("[FINANCE] FACTORY: Tools initialized")
         return FinancialReportWorkflow(
             query_engine_tool=query_engine_tool,
             code_interpreter_tool=code_interpreter_tool,
             document_generator_tool=document_generator_tool,
-            timeout=300.0
+            timeout=timeout_seconds
         )
 
     except Exception as e:
-        logger.error(f"Pattern C: Workflow creation failed: {e}")
+        logger.error(f"[FINANCE] ERROR: Creation failed: {e}")
         raise ValueError(f"Failed to create financial report workflow: {str(e)}")
 
-# ====================================================================================
-# STEP 4-5-6: COMPLETE SERVER ENDPOINT WITH APPROACH E ARTIFACT EXTRACTION (PATTERN C)
-# ====================================================================================
 # ====================================================================================
 # STEP 4: THIN ENDPOINT WRAPPER USING SHARED INFRASTRUCTURE
 # ====================================================================================
 
-# Thin factory function (belongs in this file with workflow logic)
-def create_financial_report_workflow_factory(chat_request: Optional[ChatRequest] = None):
-    """Thin factory that returns workflow instance using local implementation"""
-    return create_workflow(chat_request)
-
-@router.post("/chat")
-@bind_workflow_session(workflow_config)
-async def chat_endpoint(request: Request, payload: Dict[str, Any]) -> JSONResponse:
-    """
-    THIN ENDPOINT WRAPPER - uses execute_adapter_workflow for consistent artifact handling
-
-    Ported workflows use the same proven infrastructure as adapted workflows.
-    """
-    # Extract request parameters
-    user_message = payload["question"]
-    session = request.state.chat_session
-    chat_memory = request.state.chat_memory
-    user_config = request.state.user_config
-    chat_manager = request.state.chat_manager
-
-    # Use PROVEN execute_adapter_workflow instead of buggy execute_ported_workflow
-    response_data = await execute_adapter_workflow(
-        workflow_factory=create_financial_report_workflow_factory,  # Ported factory
-        workflow_config=workflow_config,
-        user_message=user_message,
-        user_config=user_config,
-        chat_manager=chat_manager,
-        session=session,
-        chat_memory=chat_memory,
-        logger=logger
-    )
-
-    # Return JSON response (ported workflows use JSON, adapted use HTML)
-    return JSONResponse(content=response_data)
+# LEGACY CHAT ENDPOINT REMOVED
+# Workflow execution is now handled centrally through /api/workflow/{workflow}/session/{session_id}
+# in super_starter_suite/chat_bot/workflow_execution/workflow_endpoints.py
